@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Uncial+Antiqua&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Pirata+One&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Macondo&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Berkshire+Swash&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Calligraffiti&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Almendra+SC:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cardo:wght@400;700&display=swap');
+
+.fade-in {
+    opacity: 0;
+    transition: opacity 0.5s ease-in;
+}
+  
+.fade-in-active {
+  opacity: 1;
+}
+
+.shimmer-hover {
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.shimmer-hover::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0.2) 50%,
+    rgba(255,255,255,0) 100%
+  );
+  animation: shimmer 2s linear infinite;
+  z-index: -1;
+  transition: opacity 0.3s ease;
+  opacity: 0;
+}
+
+.shimmer-hover:hover::before {
+  opacity: 1;
+}
+
+@keyframes sparkle-check {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0);
+  }
+}
+.animate-sparkle-check::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* centers the sparkle */
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle, white 0%, transparent 70%);
+  border-radius: 50%;
+  animation: sparkle-check 0.4s ease-out;
+  pointer-events: none;
+  z-index: 10;
+}
+
