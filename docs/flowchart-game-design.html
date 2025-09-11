@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game Logic Flowchart</title>
+    <title>Game Logic Flowchart (with Backend)</title>
     <style>
         body {
             background-color: #1f2937;
@@ -30,12 +30,14 @@
         B -->|No| B1{Story preference choice} --> D[Init gameMemory<br>Clear sessionStorage]
         C --> N[Render UI<br>- GameScreen <br>- ChoiceGrid <br>- CompanionLog<br>- StoryLog]
         D --> E[Build Prompt<br>- Preference if scene 0<br>- gameMemory:<br>+ last summary<br>+ companions <br>- choice]
-        E --> F[Generate Story<br>- Call GPT API]
-        F --> G[Handle AI Response<br>- Parse JSON <br>- Update storySegments]
-        G --> H{Valid JSON?}
-        H -->|Yes| L[(Save to sessionStorage)]
-        H -->|Yes -> update gameMemory| I[(gameMemory<br>- story<br>- choices<br>- summary<br>- companions<br>//stats<br>//arc, chapter)]
-        H -->|No -> retry 2 times| F
+        E --> F[Send to Backend Proxy<br>Express Server]
+        F --> G[Backend Request<br>- Inject API key<br>- Call OpenAI API]
+        G --> H[Receive AI Response<br>- JSON with title, story, choices, characters, summary]
+        H --> I[Handle AI Response in Frontend<br>- Parse JSON<br>- Update storySegments]
+        I --> J{Valid JSON?}
+        J -->|Yes| L[(Save to sessionStorage)]
+        J -->|Yes -> update gameMemory| K[(gameMemory<br>- story<br>- choices<br>- summary<br>- companions<br>//stats<br>//arc, chapter)]
+        J -->|No -> retry 2 times| E
         N --> O{User Action?<br>- Choice<br>- Save<br>//Undo<br>//Companion}
         O -->|Choice| P[Handle Choice<br>- Append choice to prompt]
         O -->|Save| R[Save to Slot]
@@ -46,25 +48,26 @@
         Q -.-> E
         R --> T[(localStorage)]
         T --> C
-        S -.-> I
-        I --> N
+        S -.-> K
+        K --> N
         N -.-> U[[Game Over?]]
         U -.->|Yes| V[[Show Stats<br>- Choices <br>-Companion <br>-Outcomes]]
         V -.-> W((End Game))
         N -.-> X[[Multiplayer Sync<br>Backend WebSocket]]
         X -.-> Y[[Backend]]
         Y -.-> N
-        I --> Story[(Story: Displayed in UI)]
-        I --> Choices[(4 choices: Displayed in UI)]
-        I --> Sum[(Summary of story: Used for context for next scene-building prompts)]
-        I --> Comp[(Companions:<br>- Name<br>- Role<br>- Traits<br>- Emotions toward player<br>- Events with players<br>- Purpose in scene<br>- Fulfilled in this scene?<br>- Status: active, phasing out, out, returning,...?)]
+        K --> Story[(Story: Displayed in UI)]
+        K --> Choices[(4 choices: Displayed in UI)]
+        K --> Sum[(Summary of story: Used for context for next scene-building prompts)]
+        K --> Comp[(Companions:<br>- Name<br>- Role<br>- Traits<br>- Emotions toward player<br>- Events with players<br>- Purpose in scene<br>- Fulfilled in this scene?<br>- Status: active, phasing out, out, returning,...?)]
+
     subgraph Legend
-            A1((Circle = Start or End))
-            A2{Diamond = Decision Point}
-            A3[Rectangle = Process/Action]
-            A4[(Pipe = Data Store)]
-            A5[[2 Squares = Planned]]
-        end
+        A1((Circle = Start or End))
+        A2{Diamond = Decision Point}
+        A3[Rectangle = Process/Action]
+        A4[(Pipe = Data Store)]
+        A5[[2 Squares = Planned]]
+    end
     </div>
     <script src="https://unpkg.com/mermaid@10.9.1/dist/mermaid.min.js"></script>
     <script>
