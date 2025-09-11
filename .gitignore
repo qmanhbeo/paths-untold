@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+server/node_modules
 /.pnp
 .pnp.js
 
@@ -24,3 +25,8 @@ yarn-error.log*
 
 # Environment files
 .env
+server/.env
+
+# Local helpers
+src/project_src_tree.txt
+project_tree.txt

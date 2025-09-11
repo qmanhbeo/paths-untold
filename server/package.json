@@ -1,0 +1,19 @@
+{
+    "name": "api-proxy",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "nodemon --watch . server.js",
+        "start": "node server.js",
+        "test": "node --version"
+    },
+    "dependencies": {
+        "cors": "^2.8.5",
+        "express": "^4.19.2",
+        "node-fetch": "^3.3.2",
+        "zod": "^3.23.8"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.10"
+    }
+}
