@@ -1,3 +1,4 @@
+// src/components/GameScreenComponents/StoryDisplay.js
 const StoryDisplay = ({ storyHtml, scrollRef }) => (
     <div className="flex-grow rounded-lg p-4 mb-4 overflow-y-auto" ref={scrollRef}>
       <div className="w-full h-full border-none outline-none resize-none">

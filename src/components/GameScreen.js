@@ -7,6 +7,7 @@ import { getComputedEmotions } from '../utils/emotionCalculator';
 import { updateGameMemory } from '../utils/memoryManager';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildUnifiedPrompt } from '../utils/buildUnifiedPrompt';
+import { applyDeltas } from '../state/applyDeltas';
 import {
   assignPurposeIfNeeded,
   updatePhaseOutCountdowns
@@ -21,6 +22,19 @@ import {
 
 import './styles.css';
 import backgroundImage from '../images/background-black.jpg';
+
+// -- helper to patch old saves that don't have world/arc yet
+const ensureWorldArc = (mem) => ({
+  ...mem,
+  world: mem?.world ?? {
+    clock: { day: 1, time: 'day' },
+    location: { name: 'Unknown Place', tags: [] },
+    sceneTags: [],
+    objectives: [],
+    flags: {}
+  },
+  arc: mem?.arc ?? { chapter: 1, beat: 0, tension: 3 }
+});
 
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [displayedTitle, setDisplayedTitle] = useState('Your Adventure Awaits...');
@@ -42,10 +56,20 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
-      return storyOptions.memory;
+      return ensureWorldArc(storyOptions.memory);
     }
     sessionStorage.removeItem('gameMemory');
-    return { summary: [], choices: [], companions: [], story: [], currentScene: 0 };
+    return {
+      summary: [], choices: [], companions: [], story: [], currentScene: 0,
+      world: {
+        clock: { day: 1, time: 'day' },
+        location: { name: 'Unknown Place', tags: [] },
+        sceneTags: [],
+        objectives: [],
+        flags: {}
+      },
+      arc: { chapter: 1, beat: 0, tension: 3 }
+    };
   });
 
   useEffect(() => {
@@ -62,8 +86,19 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
     if (!storyGenerated.current && !storyOptions?.resumeFromSave && prompt) {
       setIsLoading(true);
-      const initialMemory = { summary: [], choices: [], companions: [], story: [], currentScene: 0 };
+      const initialMemory = {
+        summary: [], choices: [], companions: [], story: [], currentScene: 0,
+        world: {
+          clock: { day: 1, time: 'day' },
+          location: { name: 'Unknown Place', tags: [] },
+          sceneTags: [],
+          objectives: [],
+          flags: {}
+        },
+        arc: { chapter: 1, beat: 0, tension: 3 }
+      };
       setGameMemory(initialMemory);
+
       const newPrompt = buildUnifiedPrompt(initialMemory, '', storyOptions);
       generateStory(newPrompt, async (rawAI0) => {
         console.log('[PROMPT 0]', newPrompt);
@@ -73,7 +108,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
       storyGenerated.current = true;
     }
-  }, [prompt]);
+  }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     sessionStorage.setItem('gameMemory', JSON.stringify(gameMemory));
@@ -85,8 +120,11 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setRawOutput(typeof rawAIX === 'string' ? rawAIX : JSON.stringify(rawAIX));
 
     try {
-      const parsed = typeof rawAIX === 'string' ? JSON.parse(rawAIX) : rawAIX;
-      const { title, story, choices, characters, summary } = parsed;
+      const parsed = (rawAIX && typeof rawAIX === 'object') ? rawAIX : JSON.parse(rawAIX);
+      const {
+        title, story, choices, characters, summary,
+        sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta
+      } = parsed;
 
       if (!titleSet && title) {
         setFadeInTitle(false);
@@ -101,13 +139,21 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       setStorySegments(prev => [...prev, { html: htmlSegment, animate: true }]);
       setDisplayedChoices(choices || []);
 
-      const updatedMemory = updateGameMemory(gameMemory, story, summary, choice);
+      // Apply deltas BEFORE pushing arrays so the updated state is used for merges/UI
+      const updatedMemory = (() => {
+        const draft = JSON.parse(JSON.stringify(gameMemory)); // simple immutable update
+        applyDeltas(draft, { sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta });
+        return updateGameMemory(draft, story, summary, choice);
+      })();
+
       const trueSceneIdx = updatedMemory.story.length - 1;
 
-      const companionMap = new Map((gameMemory.companions || []).map(c => [c.name.toLowerCase(), c]));
+      // Use the delta-applied companions as the base for merging
+      const companionMap = new Map((updatedMemory.companions || []).map(c => [c.name.toLowerCase(), c]));
 
       (characters || []).forEach(incoming => {
-        const key = incoming.name.toLowerCase();
+        const key = String(incoming.name || '').toLowerCase();
+        if (!key) return;
         const existing = companionMap.get(key);
         const merged = existing ? updateCharacterTraits(existing, incoming) : incoming;
         const computed = getComputedEmotions(merged);
@@ -199,41 +245,87 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setShowSaveOptions(false);
   };
 
-
   return (
-    <div className="flex flex-row h-screen bg-cover bg-center bg-no-repeat relative" style={{ backgroundImage: `url(${backgroundImage})` }}>
-      {showSidebar && <SceneLog scenes={gameMemory.story} onClose={() => setShowSidebar(false)} />}
-      {showCharacterPanel && <div className="flex flex-row animate-slide-in-left"><CharacterLog companions={gameMemory.companions || []} currentScene={gameMemory.currentScene} onClose={() => setShowCharacterPanel(false)} /></div>}
+    <div
+      className="flex flex-row h-screen bg-cover bg-center bg-no-repeat relative"
+      style={{ backgroundImage: `url(${backgroundImage})` }}
+    >
+      {showSidebar && (
+        <SceneLog
+          scenes={gameMemory.story}
+          onClose={() => setShowSidebar(false)}
+        />
+      )}
+      {showCharacterPanel && (
+        <div className="flex flex-row animate-slide-in-left">
+          <CharacterLog
+            companions={gameMemory.companions || []}
+            currentScene={gameMemory.currentScene}
+            onClose={() => setShowCharacterPanel(false)}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col flex-grow p-10 pt-10 animate-fade-in-slow">
-        <h1 className={`text-2xl font-bold text-white font-berkshire mb-4 transition-opacity duration-1000 ${fadeInTitle ? 'opacity-100' : 'opacity-0'}`}>{displayedTitle}</h1>
+        <h1
+          className={`text-2xl font-bold text-white font-berkshire mb-4 transition-opacity duration-1000 ${fadeInTitle ? 'opacity-100' : 'opacity-0'}`}
+        >
+          {displayedTitle}
+        </h1>
 
-        <HeaderBar title="" onToggleLog={() => setShowSidebar(!showSidebar)} showSidebar={showSidebar} />
+        <HeaderBar mem={gameMemory} onToggleLog={() => setShowSidebar(!showSidebar)} showSidebar={showSidebar} />
 
         <div className="flex justify-end mb-2 gap-2 items-center animate-fade-in-slow">
-          <button disabled={isLoading} onClick={handleSave} className="text-white border border-yellow-300 rounded px-4 py-1 hover:bg-yellow-800 disabled:opacity-50 animate-fade-in-slow">Save Game</button>
-          <button onClick={() => setShowCharacterPanel(!showCharacterPanel)} className="text-white border border-green-300 rounded px-4 py-1 hover:bg-green-800 animate-fade-in-slow">{showCharacterPanel ? 'Hide Characters' : 'Show Characters'}</button>
-          <button onClick={onBackToMenu} className="text-white border border-red-300 rounded px-4 py-1 hover:bg-red-800 text-sm animate-fade-in-slow">⏎ Back to Menu</button>
+          <button
+            disabled={isLoading}
+            onClick={handleSave}
+            className="text-white border border-yellow-300 rounded px-4 py-1 hover:bg-yellow-800 disabled:opacity-50 animate-fade-in-slow"
+          >
+            Save Game
+          </button>
+          <button
+            onClick={() => setShowCharacterPanel(!showCharacterPanel)}
+            className="text-white border border-green-300 rounded px-4 py-1 hover:bg-green-800 animate-fade-in-slow"
+          >
+            {showCharacterPanel ? 'Hide Characters' : 'Show Characters'}
+          </button>
+          <button
+            onClick={onBackToMenu}
+            className="text-white border border-red-300 rounded px-4 py-1 hover:bg-red-800 text-sm animate-fade-in-slow"
+          >
+            ⏎ Back to Menu
+          </button>
         </div>
 
         {showSaveOptions && (
           <div className="bg-yellow-800 bg-opacity-90 p-4 rounded shadow-lg text-white mb-4 w-fit animate-fade-in-slow">
             <label htmlFor="slot" className="text-sm mr-2">Choose Save Slot:</label>
-            <select id="slot" value={selectedSlot} onChange={(e) => setSelectedSlot(e.target.value)} className="text-black px-2 py-1 rounded mr-4">
+            <select
+              id="slot"
+              value={selectedSlot}
+              onChange={(e) => setSelectedSlot(e.target.value)}
+              className="text-black px-2 py-1 rounded mr-4"
+            >
               <option value="slot1">Slot 1</option>
               <option value="slot2">Slot 2</option>
               <option value="slot3">Slot 3</option>
             </select>
-            <button onClick={confirmSave} className="bg-green-600 hover:bg-green-700 px-4 py-1 rounded text-sm">Confirm Save</button>
+            <button onClick={confirmSave} className="bg-green-600 hover:bg-green-700 px-4 py-1 rounded text-sm">
+              Confirm Save
+            </button>
           </div>
         )}
 
-        {saveMessage && <div className="text-green-400 text-sm mb-2 animate-fade-in-slow">{saveMessage}</div>}
+        {saveMessage && (
+          <div className="text-green-400 text-sm mb-2 animate-fade-in-slow">{saveMessage}</div>
+        )}
 
         <div className="flex-grow rounded-lg p-4 mb-4 overflow-y-auto" ref={storyBoxRef}>
           <div className="w-full h-full border-none outline-none resize-none">
             {storySegments.length === 0 ? (
-              <p className="font-cardo text-white mix-blend-difference italic opacity-80 animate-pulse-slow">Almost There... Your World is Forming...</p>
+              <p className="font-cardo text-white mix-blend-difference italic opacity-80 animate-pulse-slow">
+                Almost There... Your World is Forming...
+              </p>
             ) : (
               storySegments.map((segment, index) => (
                 <p

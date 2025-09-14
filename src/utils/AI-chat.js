@@ -46,20 +46,19 @@ function robustParseJSON(raw) {
   return null;
 }
 
-/* ---------- Normalization to the exact shape GameScreen expects ---------- */
+/* ---------- Normalization helpers ---------- */
 function coerceChoices(v) {
   if (Array.isArray(v)) {
     return v
       .map((c) => (typeof c === 'string' ? c : (c && c.text) || ''))
       .map((s) => s.trim())
       .filter(Boolean)
-      .slice(0, 8); // safety cap
+      .slice(0, 8);
   }
   return [];
 }
 function coerceCharacters(v) {
   if (!Array.isArray(v)) return [];
-  // keep only reasonable fields
   return v.map((ch) => ({
     name: String(ch?.name ?? '').trim() || 'Unknown',
     personality: String(ch?.personality ?? '').trim(),
@@ -70,6 +69,54 @@ function coerceCharacters(v) {
     relationshipHistory: Array.isArray(ch?.relationshipHistory) ? ch.relationshipHistory : [],
   }));
 }
+function coerceSceneTags(v) {
+  if (!Array.isArray(v)) return [];
+  return v.map(s => String(s).toLowerCase().trim()).filter(Boolean).slice(0, 12);
+}
+function coerceObjectivesDelta(v) {
+  if (!Array.isArray(v)) return [];
+  return v.map(d => ({
+    add: typeof d?.add === 'string' ? d.add : undefined,
+    complete: typeof d?.complete === 'string' ? d.complete : undefined,
+    fail: typeof d?.fail === 'string' ? d.fail : undefined
+  })).filter(d => d.add || d.complete || d.fail);
+}
+function coerceLocationDelta(v) {
+  if (!v || typeof v !== 'object') return null;
+  const name = typeof v.name === 'string' ? v.name : undefined;
+  const addTags = Array.isArray(v.addTags) ? v.addTags.map(String) : undefined;
+  const removeTags = Array.isArray(v.removeTags) ? v.removeTags.map(String) : undefined;
+  if (!name && !addTags && !removeTags) return null;
+  return { name, addTags, removeTags };
+}
+function coerceCompanionsDelta(v) {
+  if (!Array.isArray(v)) return [];
+  return v.map(it => {
+    const idOrName = typeof it?.idOrName === 'string'
+      ? it.idOrName
+      : String(it?.name || '').trim();
+    if (!idOrName) return null;
+    const say = typeof it?.say === 'string' ? it.say : undefined;
+    const ok = ['active','phased_out','rejoined','gone'];
+    const status = ok.includes(it?.status) ? it.status : undefined;
+    const history = Array.isArray(it?.history)
+      ? it.history
+          .filter(h => h && typeof h.event === 'string' && Number.isFinite(Number(h.impact)))
+          .map(h => ({ event: h.event, impact: Number(h.impact) }))
+      : undefined;
+    return { idOrName, say, history, status };
+  }).filter(Boolean);
+}
+function coerceArcDelta(v) {
+  if (!v || typeof v !== 'object') return null;
+  const t = Number.isInteger(v.tension) && [-1,0,1].includes(v.tension) ? v.tension : undefined;
+  const b = Number.isInteger(v.beat) && [0,1].includes(v.beat) ? v.beat : undefined;
+  const c = Number.isInteger(v.chapter) && [0,1].includes(v.chapter) ? v.chapter : undefined;
+  if (t === undefined && b === undefined && c === undefined) return null;
+  return { tension: t, beat: b, chapter: c };
+}
+
+/* ---------- Normalize to the shape GameScreen expects ---------- */
 function normalizeStoryObject(obj, raw) {
   if (!obj || typeof obj !== 'object') {
     return { title: 'Untitled', story: raw || '', choices: [], characters: [], summary: '' };
@@ -79,7 +126,15 @@ function normalizeStoryObject(obj, raw) {
   const choices = coerceChoices(obj.choices);
   const characters = coerceCharacters(obj.characters);
   const summary = typeof obj.summary === 'string' ? obj.summary : '';
-  return { title, story, choices, characters, summary };
+
+  // NEW fields we pass through
+  const sceneTags = coerceSceneTags(obj.sceneTags);
+  const objectivesDelta = coerceObjectivesDelta(obj.objectivesDelta);
+  const locationDelta = coerceLocationDelta(obj.locationDelta);
+  const companionsDelta = coerceCompanionsDelta(obj.companionsDelta);
+  const arcDelta = coerceArcDelta(obj.arcDelta);
+
+  return { title, story, choices, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta };
 }
 
 /* ---------- Public API used by GameScreen ---------- */

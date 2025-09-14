@@ -1,3 +1,4 @@
+// src/components/GameScreenComponents/ChoiceGrid.js
 const ChoiceGrid = ({ choices, onChoice }) => {
     return (
       <div className="font-cardo grid grid-cols-2 gap-4 h-[220px]">
