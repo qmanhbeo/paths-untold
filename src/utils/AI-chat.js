@@ -1,7 +1,7 @@
 // src/utils/AI-chat.js
 import React, { useEffect, useRef, useState } from 'react';
+import { chat as llmChat } from '../services/llmClient';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:5174/api';
 const API_MODEL = process.env.REACT_APP_LLM_MODEL || 'gpt-4o-mini';
 
 /* ---------- Robust JSON parsing ---------- */
@@ -140,21 +140,7 @@ function normalizeStoryObject(obj, raw) {
 /* ---------- Public API used by GameScreen ---------- */
 export async function generateStory(prompt, callback) {
   try {
-    const res = await fetch(`${API_BASE}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: API_MODEL,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Proxy error ${res.status}: ${errText || 'no body'}`);
-    }
-
-    const data = await res.json();
+    const data = await llmChat(prompt, { model: API_MODEL });
     const raw = data?.choices?.[0]?.message?.content;
     if (!raw) throw new Error('LLM returned no content');
 
@@ -169,6 +155,7 @@ export async function generateStory(prompt, callback) {
     throw e;
   }
 }
+
 
 /* ---------- Optional helper component you were already using ---------- */
 const GameStart = ({ onStoryGenerated, prompt }) => {
