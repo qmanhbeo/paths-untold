@@ -1,29 +1,21 @@
-// GameScreen.js
-
+// src/components/GameScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import { generateStory } from '../utils/AI-chat';
-import { updateCharacterTraits } from '../utils/updateCharacter';
-import { getComputedEmotions } from '../utils/emotionCalculator';
-import { updateGameMemory } from '../utils/memoryManager';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildUnifiedPrompt } from '../utils/buildUnifiedPrompt';
-import { applyDeltas } from '../state/applyDeltas';
-import {
-  assignPurposeIfNeeded,
-  updatePhaseOutCountdowns
-} from '../utils/phaseOutManager';
+import { updateFromAIPacket } from '../state/updateFromAIPacket';
+import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 
 import SceneLog from './sceneLog';
 import CharacterLog from './characterLog';
-import {
-  HeaderBar,
-  ChoiceGrid,
-} from './GameScreenComponents';
+import { HeaderBar, ChoiceGrid } from './GameScreenComponents';
 
 import './styles.css';
 import backgroundImage from '../images/background-black.jpg';
 
-// -- helper to patch old saves that don't have world/arc yet
+// ------- helpers ------------------------------------------------------------
+
+// ensure world/arc exists (for legacy saves)
 const ensureWorldArc = (mem) => ({
   ...mem,
   world: mem?.world ?? {
@@ -35,6 +27,18 @@ const ensureWorldArc = (mem) => ({
   },
   arc: mem?.arc ?? { chapter: 1, beat: 0, tension: 3 }
 });
+
+// escape HTML but keep line breaks
+const toSafeHtml = (text = '') =>
+  String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\n/g, '<br />');
+
+// ------- component ----------------------------------------------------------
 
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [displayedTitle, setDisplayedTitle] = useState('Your Adventure Awaits...');
@@ -51,6 +55,16 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [showSaveOptions, setShowSaveOptions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // smart auto-scroll state
+  const [stickToBottom, setStickToBottom] = useState(true);
+
+  // native smooth scroll (browser handles perf)
+  const smoothScrollToBottom = (el) => {
+    if (!el) return;
+    // optional tiny delay feels cozier without custom animations
+    setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 60);
+  };
+
   const storyBoxRef = useRef(null);
   const storyGenerated = useRef(false);
 
@@ -60,7 +74,11 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     }
     sessionStorage.removeItem('gameMemory');
     return {
-      summary: [], choices: [], companions: [], story: [], currentScene: 0,
+      summary: [],
+      choices: [],
+      companions: [],
+      story: [],
+      currentScene: 0,
       world: {
         clock: { day: 1, time: 'day' },
         location: { name: 'Unknown Place', tags: [] },
@@ -72,6 +90,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     };
   });
 
+  // Resume-from-save UI rehydrate or first scene generation
   useEffect(() => {
     if (storyOptions?.resumeFromSave && storyOptions?.ui && storyOptions.memory) {
       const { displayedTitle, rawOutput } = storyOptions.ui;
@@ -86,8 +105,13 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
     if (!storyGenerated.current && !storyOptions?.resumeFromSave && prompt) {
       setIsLoading(true);
+
       const initialMemory = {
-        summary: [], choices: [], companions: [], story: [], currentScene: 0,
+        summary: [],
+        choices: [],
+        companions: [],
+        story: [],
+        currentScene: 0,
         world: {
           clock: { day: 1, time: 'day' },
           location: { name: 'Unknown Place', tags: [] },
@@ -110,9 +134,30 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     }
   }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Persist memory in session
   useEffect(() => {
     sessionStorage.setItem('gameMemory', JSON.stringify(gameMemory));
   }, [gameMemory]);
+
+  // Smart auto-scroll: track whether user is near bottom
+  useEffect(() => {
+    const el = storyBoxRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 16; // 16px threshold
+      setStickToBottom(atBottom);
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Only auto-scroll when user is at/near bottom
+  useEffect(() => {
+    const el = storyBoxRef.current;
+    if (el && stickToBottom) {
+      smoothScrollToBottom(el);
+    }
+  }, [storySegments.length, stickToBottom]);
 
   const handleRawAIX = async (rawAIX, choice = '', retry = false) => {
     console.log(`[RAW AI OUTPUT - Scene ${gameMemory.story.length}]`, rawAIX);
@@ -120,12 +165,13 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setRawOutput(typeof rawAIX === 'string' ? rawAIX : JSON.stringify(rawAIX));
 
     try {
-      const parsed = (rawAIX && typeof rawAIX === 'object') ? rawAIX : JSON.parse(rawAIX);
-      const {
-        title, story, choices, characters, summary,
-        sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta
-      } = parsed;
+      // Normalize no matter what the upstream shape is (string/completion/object)
+      const obj = extractAndNormalizeAiResponse(rawAIX);
+      if (!obj) throw new Error('Could not extract JSON payload from model output');
 
+      const { title } = obj;
+
+      // Title animation (only once)
       if (!titleSet && title) {
         setFadeInTitle(false);
         setTimeout(() => {
@@ -135,51 +181,25 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         setTitleSet(true);
       }
 
-      const htmlSegment = story.replace(/\n/g, '<br />');
+      // Render story safely
+      const htmlSegment = toSafeHtml(obj.story || '');
       setStorySegments(prev => [...prev, { html: htmlSegment, animate: true }]);
-      setDisplayedChoices(choices || []);
 
-      // Apply deltas BEFORE pushing arrays so the updated state is used for merges/UI
-      const updatedMemory = (() => {
-        const draft = JSON.parse(JSON.stringify(gameMemory)); // simple immutable update
-        applyDeltas(draft, { sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta });
-        return updateGameMemory(draft, story, summary, choice);
-      })();
+      // Keep choices as STRINGS (prevents React "object as child" error)
+      const normChoices = (Array.isArray(obj.choices) ? obj.choices : [])
+        .map(c => (typeof c === 'string' ? c : (c?.text ?? '')))
+        .filter(Boolean);
+      setDisplayedChoices(normChoices);
 
-      const trueSceneIdx = updatedMemory.story.length - 1;
+      // Update memory in one pure step
+      const nextMem = updateFromAIPacket(gameMemory, obj, choice);
+      setStorySummary(obj.summary || '');
+      setGameMemory(nextMem);
 
-      // Use the delta-applied companions as the base for merging
-      const companionMap = new Map((updatedMemory.companions || []).map(c => [c.name.toLowerCase(), c]));
-
-      (characters || []).forEach(incoming => {
-        const key = String(incoming.name || '').toLowerCase();
-        if (!key) return;
-        const existing = companionMap.get(key);
-        const merged = existing ? updateCharacterTraits(existing, incoming) : incoming;
-        const computed = getComputedEmotions(merged);
-        companionMap.set(key, {
-          ...merged,
-          lastUpdatedScene: trueSceneIdx,
-          ...computed,
-          prevEmotions: existing ? getComputedEmotions(existing) : computed
-        });
-      });
-
-      const updatedCompanions = Array.from(companionMap.values());
-
-      const withLifecycle = assignPurposeIfNeeded(updatedCompanions, trueSceneIdx);
-      const lifecycleUpdated = updatePhaseOutCountdowns(withLifecycle, trueSceneIdx);
-
-      setStorySummary(summary || '');
-      setGameMemory(prev => ({
-        ...updatedMemory,
-        companions: lifecycleUpdated,
-        currentScene: trueSceneIdx
-      }));
-
-      return { storyX: story, sceneIdx: trueSceneIdx, fourChoicesX: choices };
+      const trueSceneIdx = nextMem.currentScene;
+      return { storyX: obj.story, sceneIdx: trueSceneIdx, fourChoicesX: normChoices };
     } catch (e) {
-      console.error('❌ Failed to parse JSON response.', e);
+      console.error('❌ Parse/update failed:', e);
 
       if (!retry) {
         console.warn('🔁 Retrying generation due to malformed output...');
@@ -206,7 +226,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     if (isLoading) return;
     setIsLoading(true);
 
-    const choiceText = `<br /><br /><strong>The player chooses:</strong> ${choice}<br /><br />`;
+    const choiceText = `<br /><br /><strong>The player chooses:</strong> ${toSafeHtml(choice)}<br /><br />`;
     setStorySegments(prev => [...prev, { html: choiceText, animate: false }]);
     setDisplayedChoices([]);
 
@@ -218,10 +238,6 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       await handleRawAIX(nextScene, choice);
       setIsLoading(false);
     });
-
-    if (storyBoxRef.current) {
-      storyBoxRef.current.scrollTop = storyBoxRef.current.scrollHeight;
-    }
   };
 
   const handleSave = () => {
@@ -319,8 +335,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         {saveMessage && (
           <div className="text-green-400 text-sm mb-2 animate-fade-in-slow">{saveMessage}</div>
         )}
-
-        <div className="flex-grow rounded-lg p-4 mb-4 overflow-y-auto" ref={storyBoxRef}>
+        <div
+          className="flex-grow rounded-lg p-4 mb-4 overflow-y-auto scroll-smooth"
+          ref={storyBoxRef}
+        >
           <div className="w-full h-full border-none outline-none resize-none">
             {storySegments.length === 0 ? (
               <p className="font-cardo text-white mix-blend-difference italic opacity-80 animate-pulse-slow">
@@ -343,6 +361,20 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           <p className="text-white mix-blend-difference mt-4">Scene #: {gameMemory.currentScene}</p>
         </div>
       </div>
+
+      {/* Jump to latest button when user scrolled up */}
+      {!stickToBottom && (
+        <button
+          className="fixed bottom-6 right-6 bg-black/60 hover:bg-black/80 text-white px-3 py-1 rounded"
+          onClick={() => {
+            const el = storyBoxRef.current;
+            smoothScrollToBottom(el);
+            setStickToBottom(true);
+          }}
+        >
+          Jump to latest
+        </button>
+      )}
     </div>
   );
 };
