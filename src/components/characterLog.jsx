@@ -1,4 +1,5 @@
 import React from 'react';
+import { IS_DEV } from '../config/env';
 import { getComputedEmotions } from '../utils/emotionCalculator';
 
 const CharacterLog = ({ companions, onClose, currentScene }) => {
@@ -61,7 +62,7 @@ const CharacterLog = ({ companions, onClose, currentScene }) => {
               )}
 
               {/* 🚧 Debug Info (dev only) */}
-              {process.env.NODE_ENV !== 'production' && (
+              {IS_DEV && (
                 <div className="mt-3 text-yellow-400 text-xs border-t border-yellow-600 pt-2">
                   <p><strong>[DEBUG]</strong></p>
                   <p>Status: {char.status || 'unknown'}</p>

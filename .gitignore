@@ -11,6 +11,7 @@ server/node_modules
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -30,3 +31,4 @@ server/.env
 # Local helpers
 src/project_src_tree.txt
 project_tree.txt
+.npm-cache/

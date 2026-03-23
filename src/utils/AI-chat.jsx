@@ -1,24 +1,21 @@
 // src/utils/AI-chat.js
 import React, { useEffect, useRef, useState } from 'react';
+import { LLM_MODEL } from '../config/env';
 import { chat as llmChat } from '../services/llmClient';
+import { createDebugLogger } from './debugLog';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 
-const API_MODEL = process.env.REACT_APP_LLM_MODEL || 'gpt-4o-mini';
+const debug = createDebugLogger('AI-chat');
 
 /** Public API used by components */
 export async function generateStory(prompt, callback) {
   try {
     // Call proxy → upstream completion JSON
-    const upstream = await llmChat(prompt, { model: API_MODEL });
-
-    // Centralized parse/normalize
-    const normalized = extractAndNormalizeAiResponse(upstream);
-    if (!normalized) throw new Error('LLM returned unparseable content');
-
-    if (callback) callback(normalized);
-    return normalized;
+    const upstream = await llmChat(prompt, { model: LLM_MODEL });
+    if (callback) callback(upstream);
+    return upstream;
   } catch (e) {
-    console.error('[generateStory] error', e);
+    debug.error('[generateStory] error', e);
     if (callback) callback(null, e);
     throw e;
   }
@@ -37,7 +34,8 @@ const GameStart = ({ onStoryGenerated, prompt }) => {
 
     setLoading(true);
     setErr(null);
-    generateStory(prompt, (payload) => {
+    generateStory(prompt, (upstream) => {
+      const payload = extractAndNormalizeAiResponse(upstream);
       if (payload) onStoryGenerated && onStoryGenerated(payload);
       setLoading(false);
     }).catch(e => {

@@ -1,6 +1,5 @@
 // src/services/llmClient.js
-const BASE  = process.env.REACT_APP_API_BASE || "http://localhost:5174/api";
-const MODEL = process.env.REACT_APP_LLM_MODEL || "gpt-4o-mini";
+import { API_BASE, LLM_MODEL } from '../config/env';
 
 function withTimeout(ms = 30000) {
   const ctrl = new AbortController();
@@ -10,10 +9,10 @@ function withTimeout(ms = 30000) {
 
 /** Low-level chat call to your proxy; returns the upstream JSON as-is. */
 export async function chat(prompt, options = {}) {
-  const model = options.model || MODEL;
+  const model = options.model || LLM_MODEL;
   const { signal, clear } = withTimeout(30000);
   try {
-    const res = await fetch(`${BASE}/chat`, {
+    const res = await fetch(`${API_BASE}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal,

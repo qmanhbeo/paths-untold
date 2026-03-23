@@ -3,18 +3,13 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "dev": "nodemon --watch . server.js",
+        "dev": "node --env-file=.env server.js",
         "start": "node server.js",
         "test": "node --version"
     },
     "dependencies": {
-        "cors": "^2.8.5",
-        "express": "^4.19.2",
-        "node-fetch": "^3.3.2",
-        "paths-untold": "file:..",
-        "zod": "^4.1.8"
-    },
-    "devDependencies": {
-        "nodemon": "^3.1.10"
+        "cors": "^2.8.6",
+        "express": "^5.2.1",
+        "zod": "^4.3.6"
     }
 }

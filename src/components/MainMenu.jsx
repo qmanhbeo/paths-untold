@@ -1,6 +1,7 @@
 // MainMenu.js
 
 import React from 'react';
+import { publicAsset } from '../config/env';
 
 const MainMenu = ({ onStartNewGame, onLoadGame, onQuit }) => {
   return (
@@ -8,7 +9,7 @@ const MainMenu = ({ onStartNewGame, onLoadGame, onQuit }) => {
       {/* Logo + Game Name */}
       <div className="flex flex-col items-center mb-6 animate-fade-in-slow">
         <img
-          src={`${process.env.PUBLIC_URL}/logo192.png`}
+          src={publicAsset('logo192.png')}
           alt="Paths Untold Logo"
           className="w-24 h-24 mb-4"
         />

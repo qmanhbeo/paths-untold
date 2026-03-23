@@ -11,7 +11,12 @@
 //  - parseGeneratedStory(rawAIX, displayedStory, choice): (LEGACY) your old markdown-style extractor kept for compatibility.
 
 function robustParseJSON(raw) {
-  if (raw && typeof raw === 'object') return raw;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    if ('title' in raw || 'story' in raw || 'choices' in raw) {
+      return raw;
+    }
+    return null;
+  }
 
   const tryParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
   if (typeof raw !== 'string') return null;
@@ -45,6 +50,46 @@ function robustParseJSON(raw) {
 
   obj = tryParse(normalized);
   return obj || null;
+}
+
+function extractTextContent(content) {
+  if (typeof content === 'string') return content;
+
+  if (Array.isArray(content)) {
+    const joined = content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (typeof part?.text === 'string') return part.text;
+        if (typeof part?.text?.value === 'string') return part.text.value;
+        if (typeof part?.value === 'string') return part.value;
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    return joined || null;
+  }
+
+  if (content && typeof content === 'object') {
+    if (typeof content.text === 'string') return content.text;
+    if (typeof content.text?.value === 'string') return content.text.value;
+    if (typeof content.value === 'string') return content.value;
+  }
+
+  return null;
+}
+
+function extractResponsesApiText(upstream) {
+  if (!upstream || typeof upstream !== 'object' || !Array.isArray(upstream.output)) {
+    return null;
+  }
+
+  const parts = upstream.output.flatMap((item) => {
+    if (Array.isArray(item?.content)) return item.content;
+    return [];
+  });
+
+  return extractTextContent(parts);
 }
 
 // ----------------- Normalization helpers (pure) -----------------
@@ -157,9 +202,13 @@ export function extractAndNormalizeAiResponse(upstream) {
   // Case B: OpenAI chat completion (or similar)
   let text = null;
   if (upstream && typeof upstream === 'object' && upstream.choices?.[0]?.message?.content) {
-    text = upstream.choices[0].message.content;
+    text = extractTextContent(upstream.choices[0].message.content);
   } else if (upstream && typeof upstream === 'object' && upstream.message?.content) {
-    text = upstream.message.content;
+    text = extractTextContent(upstream.message.content);
+  } else if (upstream && typeof upstream === 'object' && upstream.output_text) {
+    text = extractTextContent(upstream.output_text);
+  } else if (upstream && typeof upstream === 'object') {
+    text = extractResponsesApiText(upstream);
   } else if (typeof upstream === 'string') {
     text = upstream;
   }

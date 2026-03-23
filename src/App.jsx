@@ -1,5 +1,5 @@
 // App.js (with full save/load logic patched correctly)
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import MainMenu from './components/MainMenu';
 import StartScreen from './components/StartScreen';
 import LoadGameScreen from './components/LoadGameScreen';

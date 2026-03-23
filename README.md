@@ -125,15 +125,15 @@ cd paths-untold
 ```env
 OPENAI_API_KEY=sk-...your key...
 UPSTREAM_URL=https://api.openai.com/v1/chat/completions
-MODEL=gpt-4o-mini
+MODEL=gpt-5-nano
 PORT=5174
 ```
 
 #### Frontend (root `.env`)
 
 ```env
-REACT_APP_API_BASE=http://localhost:5174/api
-REACT_APP_LLM_MODEL=gpt-4o-mini
+VITE_API_BASE=http://localhost:5174/api
+VITE_LLM_MODEL=gpt-5-nano
 ```
 
 ⚠️ **Important**: Keep your API key only in `/server/.env`. The frontend `.env` must never contain secrets.
@@ -164,11 +164,11 @@ By default:
 
 ## 🛠 Tech Stack
 
-* **Frontend**: React (CRA), Tailwind CSS, React Hooks
-* **Backend**: Express, CORS, node-fetch, zod (schema validation)
+* **Frontend**: React, Vite, Tailwind CSS, React Hooks
+* **Backend**: Express, native `fetch`, CORS, zod (schema validation)
 * **AI Integration**: OpenAI API via secure server proxy
 * **State & Memory**: Custom managers for narrative state, character memory, and emotion tracking
-* **Testing**: CRA Jest setup
+* **Testing**: Vitest + Testing Library
 
 ---
 
