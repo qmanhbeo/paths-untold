@@ -56,12 +56,23 @@ module.exports = {
           '50%': { opacity: 1, transform: 'translate(-50%, -50%) scale(1.2)' },
           '100%': { opacity: 0, transform: 'translate(-50%, -50%) scale(0)' },
         },
+        'fade-out': {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0' },
+        },
+        'blur-out': {
+          '0%': { opacity: '1', filter: 'blur(0px)' },
+          '100%': { opacity: '0', filter: 'blur(8px)' },
+        },
       },
       animation: {
         'slide-in-left': 'slide-in-left 0.3s ease-out forwards',
         'slide-in-right': 'slide-in-right 0.3s ease-out forwards',
+        'fade-in': 'fade-in 0.25s ease-out forwards',
         'fade-in-slow': 'fade-in 1.5s ease-out forwards',
-        'blur-in': 'blur-in 3s ease-out forwards', // ✨ Add this line
+        'fade-out': 'fade-out 0.22s ease-in forwards',
+        'blur-in': 'blur-in 0.6s ease-out forwards',
+        'blur-out': 'blur-out 0.22s ease-in forwards',
         'shimmer': 'shimmer 2s linear infinite',
         'pulse-slow': 'pulse-slow 2s ease-in-out infinite',
         'sparkle-check': 'sparkle-check 0.6s ease-out',

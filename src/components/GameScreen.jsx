@@ -14,14 +14,14 @@ import {
   findChildNodeId,
   getNarrativeDisplayTitle,
   getNarrativeNode,
-  getNarrativeNodePath,
   insertNarrativeNode,
   normalizeNarrativeGraph,
   setActiveNarrativeNode
 } from '../state/narrativeGraph';
 
-import SceneLog from './sceneLog';
 import CharacterLog from './characterLog';
+import QuestLog from './QuestLog';
+import ItemsPanel from './ItemsPanel';
 import NarrativeBranchView from './NarrativeBranchView';
 import { HeaderBar, ChoiceGrid } from './GameScreenComponents';
 
@@ -64,10 +64,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [segments, setSegments] = useState([]);
   const [displayedPaths, setDisplayedPaths] = useState([]);
   const [rawOutput, setRawOutput] = useState('');
-  const [showSidebar, setShowSidebar] = useState(false);
   const [showCharacterPanel, setShowCharacterPanel] = useState(false);
+  const [showQuestPanel, setShowQuestPanel] = useState(false);
+  const [showItemsPanel, setShowItemsPanel] = useState(false);
   const [showNarrativeMap, setShowNarrativeMap] = useState(false);
-  const [selectedNarrativeNodeId, setSelectedNarrativeNodeId] = useState(null);
   const [saveMessage, setSaveMessage] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('slot1');
   const [showSaveOptions, setShowSaveOptions] = useState(false);
@@ -106,11 +106,6 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     graphRef.current = narrativeGraph;
   }, [narrativeGraph]);
 
-  const currentPathNodes = getNarrativeNodePath(
-    narrativeGraph,
-    narrativeGraph.activeNodeId
-  );
-
   const smoothScrollToBottom = (el) => {
     if (!el) return;
     setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 60);
@@ -133,16 +128,9 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setSegments(
       buildSceneSegments(nextGraph, nodeId, options.animateNodeId ?? null)
     );
-    setSelectedNarrativeNodeId(nodeId);
     setIsLoading(false);
     sceneGenerated.current = true;
   };
-
-  useEffect(() => {
-    if (!selectedNarrativeNodeId && narrativeGraph.activeNodeId) {
-      setSelectedNarrativeNodeId(narrativeGraph.activeNodeId);
-    }
-  }, [selectedNarrativeNodeId, narrativeGraph.activeNodeId]);
 
   useEffect(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -373,31 +361,37 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       className="relative flex h-screen flex-row bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${backgroundImage})` }}
     >
-      {showSidebar && (
-        <SceneLog scenes={currentPathNodes} onClose={() => setShowSidebar(false)} />
+      {showCharacterPanel && (
+        <CharacterLog
+          companions={gameMemory.companions || []}
+          sceneIndex={gameMemory.sceneIndex}
+          onClose={() => setShowCharacterPanel(false)}
+        />
       )}
 
-      {showCharacterPanel && (
-        <div className="flex flex-row animate-slide-in-left">
-          <CharacterLog
-            companions={gameMemory.companions || []}
-            sceneIndex={gameMemory.sceneIndex}
-            onClose={() => setShowCharacterPanel(false)}
-          />
-        </div>
+      {showQuestPanel && (
+        <QuestLog
+          objectives={gameMemory.world?.objectives || []}
+          onClose={() => setShowQuestPanel(false)}
+        />
+      )}
+
+      {showItemsPanel && (
+        <ItemsPanel
+          items={gameMemory.world?.items || []}
+          onClose={() => setShowItemsPanel(false)}
+        />
       )}
 
       {showNarrativeMap && (
         <NarrativeBranchView
           graph={narrativeGraph}
-          selectedNodeId={selectedNarrativeNodeId}
-          onSelectNode={setSelectedNarrativeNodeId}
           onJumpToNode={handleJumpToNode}
           onClose={() => setShowNarrativeMap(false)}
         />
       )}
 
-      <div className="flex flex-grow flex-col p-10 pt-10 animate-fade-in-slow">
+      <div className={`flex flex-grow flex-col p-10 pt-10 animate-fade-in-slow transition-[filter] duration-300 ${showCharacterPanel || showQuestPanel || showItemsPanel || showNarrativeMap ? 'blur-sm' : 'blur-none'}`}>
         <h1
           className={`mb-4 font-berkshire text-2xl font-bold text-white transition-opacity duration-1000 ${
             fadeInTitle ? 'opacity-100' : 'opacity-0'
@@ -406,38 +400,53 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           {displayedTitle}
         </h1>
 
-        <HeaderBar
-          mem={gameMemory}
-          onToggleLog={() => setShowSidebar(!showSidebar)}
-          showSidebar={showSidebar}
-        />
+        <HeaderBar mem={gameMemory} />
 
-        <div className="mb-2 flex items-center justify-end gap-2 animate-fade-in-slow">
-          <button
-            disabled={isLoading}
-            onClick={handleSave}
-            className="rounded border border-yellow-300 px-4 py-1 text-white hover:bg-yellow-800 disabled:opacity-50"
-          >
-            Save Game
-          </button>
-          <button
-            onClick={() => setShowNarrativeMap(true)}
-            className="rounded border border-cyan-300 px-4 py-1 text-white hover:bg-cyan-900/50"
-          >
-            Narrative Map
-          </button>
-          <button
-            onClick={() => setShowCharacterPanel(!showCharacterPanel)}
-            className="rounded border border-green-300 px-4 py-1 text-white hover:bg-green-800"
-          >
-            {showCharacterPanel ? 'Hide Characters' : 'Show Characters'}
-          </button>
-          <button
-            onClick={onBackToMenu}
-            className="rounded border border-red-300 px-4 py-1 text-sm text-white hover:bg-red-800"
-          >
-            Back to Menu
-          </button>
+        <div className="mb-2 flex items-center justify-between gap-2 animate-fade-in-slow">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowNarrativeMap(true)}
+              className="font-cardo rounded border border-cyan-300/60 px-3 py-1 text-sm text-white/90 hover:bg-cyan-900/40 transition-colors"
+            >
+              Narrative Map
+            </button>
+            <button
+              onClick={() => setShowQuestPanel(!showQuestPanel)}
+              className="font-cardo rounded border border-amber-300/40 px-3 py-1 text-sm text-white/70 hover:bg-amber-900/30 transition-colors"
+            >
+              Quests
+            </button>
+            <button
+              onClick={() => setShowItemsPanel(!showItemsPanel)}
+              className="font-cardo rounded border border-white/20 px-3 py-1 text-sm text-white/60 hover:bg-white/10 transition-colors"
+            >
+              Items
+            </button>
+            {(gameMemory.companions?.length ?? 0) > 0 && (
+              <button
+                onClick={() => setShowCharacterPanel(!showCharacterPanel)}
+                className="font-cardo rounded border border-white/25 px-3 py-1 text-sm text-white/70 hover:bg-white/10 transition-colors"
+              >
+                Characters
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={isLoading}
+              onClick={handleSave}
+              className="font-cardo rounded border border-yellow-300/50 px-3 py-1 text-sm text-white/80 hover:bg-yellow-800/40 disabled:opacity-30 transition-colors"
+            >
+              Save
+            </button>
+            <button
+              onClick={onBackToMenu}
+              className="font-cardo rounded border border-white/15 px-3 py-1 text-xs text-white/40 hover:text-white/70 hover:border-white/30 transition-colors"
+            >
+              ← Menu
+            </button>
+          </div>
         </div>
 
         {showSaveOptions && (
@@ -500,9 +509,6 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
             onChoice={handleChoiceClick}
             disabled={isLoading}
           />
-          <p className="mt-4 text-white mix-blend-difference">
-            Scene #: {gameMemory.sceneIndex}
-          </p>
         </div>
       </div>
 

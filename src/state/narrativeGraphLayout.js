@@ -7,7 +7,7 @@ import {
 const DEFAULT_LAYOUT = {
   nodeWidth: 248,
   nodeHeight: 152,
-  columnGap: 136,
+  columnGap: 200,
   rowGap: 78,
   rootGap: 1
 };
