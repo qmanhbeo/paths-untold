@@ -143,7 +143,7 @@ describe('narrativeGraph', () => {
     expect(graph.activeNodeId).toBe('resume_node');
     expect(Object.keys(graph.nodes)).toHaveLength(3);
     expect(getActiveNarrativePathIds(graph)).toHaveLength(3);
-    expect(graph.nodes.resume_node.choices).toEqual(['Leave an offering', 'Walk away']);
+    expect(graph.nodes.resume_node.paths).toEqual(['Leave an offering', 'Walk away']);
   });
 
   it('lays out branches left-to-right with sibling branches separated vertically', () => {

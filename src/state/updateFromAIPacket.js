@@ -1,7 +1,7 @@
 // src/state/updateFromAIPacket.js
 //
 // Pure helper: take current memory + a normalized AI packet + the player's choice text,
-// and return a NEW memory object with deltas applied, story/summary appended,
+// and return a NEW memory object with deltas applied, prose/summary appended,
 // companions merged (with emotions), and lifecycle updates performed.
 
 import { applyDeltas } from './applyDeltas';
@@ -85,7 +85,7 @@ export function updateFromAIPacket(memory, packet, playerChoiceText = '') {
     locationDelta,
     companionsDelta,
     arcDelta,
-    story = '',
+    prose = '',
     summary = '',
     characters = [],
   } = packet || {};
@@ -99,10 +99,10 @@ export function updateFromAIPacket(memory, packet, playerChoiceText = '') {
   });
 
   // 2) Append narrative (returns a new object)
-  const afterNarrative = updateGameMemory(draft, story, summary, playerChoiceText);
+  const afterNarrative = updateGameMemory(draft, prose, summary, playerChoiceText);
 
   // 3) Compute the new scene index
-  const sceneIdx = Math.max(0, (afterNarrative.story?.length || 1) - 1);
+  const sceneIdx = Math.max(0, (afterNarrative.prose?.length || 1) - 1);
 
   // 4) Merge companions (existing + incoming)
   const map = new Map(
@@ -140,7 +140,7 @@ export function updateFromAIPacket(memory, packet, playerChoiceText = '') {
   });
 
   // 5) Lifecycle updates (purpose assignment & phase-out countdowns)
-  const mergedCompanions = Array.from(map.values()); // <-- missing in your draft
+  const mergedCompanions = Array.from(map.values());
   const withLifecycle = assignPurposeIfNeeded(mergedCompanions, sceneIdx);
   const lifecycleUpdated = updatePhaseOutCountdowns(withLifecycle, sceneIdx);
 
@@ -148,7 +148,7 @@ export function updateFromAIPacket(memory, packet, playerChoiceText = '') {
   return {
     ...afterNarrative,
     companions: lifecycleUpdated,
-    currentScene: sceneIdx,
+    sceneIndex: sceneIdx,
   };
 }
 

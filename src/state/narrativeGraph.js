@@ -17,11 +17,11 @@ function truncateText(text = '', length = 160) {
   return `${text.slice(0, Math.max(0, length - 3)).trimEnd()}...`;
 }
 
-function normalizeChoices(choices) {
-  if (!Array.isArray(choices)) return [];
-  return choices
-    .map((choice) => (typeof choice === 'string' ? choice : choice?.text ?? ''))
-    .map((choice) => choice.trim())
+function normalizePaths(paths) {
+  if (!Array.isArray(paths)) return [];
+  return paths
+    .map((p) => (typeof p === 'string' ? p : p?.text ?? ''))
+    .map((p) => p.trim())
     .filter(Boolean);
 }
 
@@ -80,10 +80,19 @@ function escapeHtml(text = '') {
 export function createMemorySnapshot(memory = {}) {
   return cloneJson({
     summary: Array.isArray(memory.summary) ? memory.summary : [],
-    choices: Array.isArray(memory.choices) ? memory.choices : [],
+    // Accept both new (paths) and old (choices) field names
+    paths: Array.isArray(memory.paths) ? memory.paths
+      : Array.isArray(memory.choices) ? memory.choices
+      : [],
     companions: Array.isArray(memory.companions) ? memory.companions : [],
-    story: Array.isArray(memory.story) ? memory.story : [],
-    currentScene: Number.isFinite(memory.currentScene) ? memory.currentScene : 0,
+    // Accept both new (prose) and old (story) field names
+    prose: Array.isArray(memory.prose) ? memory.prose
+      : Array.isArray(memory.story) ? memory.story
+      : [],
+    // Accept both new (sceneIndex) and old (currentScene) field names
+    sceneIndex: Number.isFinite(memory.sceneIndex) ? memory.sceneIndex
+      : Number.isFinite(memory.currentScene) ? memory.currentScene
+      : 0,
     world: memory.world ?? {
       clock: { day: 1, time: 'day' },
       location: { name: 'Unknown Place', tags: [] },
@@ -96,7 +105,10 @@ export function createMemorySnapshot(memory = {}) {
 }
 
 function createBaseNode(rawNode = {}) {
-  const story = typeof rawNode.story === 'string' ? rawNode.story : '';
+  // Accept new field names (prose/proseHtml/paths) and fall back to old (story/storyHtml/choices)
+  const prose = typeof rawNode.prose === 'string' ? rawNode.prose
+    : typeof rawNode.story === 'string' ? rawNode.story
+    : '';
 
   return {
     id: rawNode.id || makeNodeId(),
@@ -110,17 +122,19 @@ function createBaseNode(rawNode = {}) {
     prompt: typeof rawNode.prompt === 'string' ? rawNode.prompt : '',
     rawOutput: typeof rawNode.rawOutput === 'string' ? rawNode.rawOutput : '',
     title: typeof rawNode.title === 'string' ? rawNode.title : '',
-    story,
-    storyHtml:
-      typeof rawNode.storyHtml === 'string' && rawNode.storyHtml
-        ? rawNode.storyHtml
-        : escapeHtml(story),
+    prose,
+    proseHtml:
+      typeof rawNode.proseHtml === 'string' && rawNode.proseHtml
+        ? rawNode.proseHtml
+        : typeof rawNode.storyHtml === 'string' && rawNode.storyHtml
+          ? rawNode.storyHtml
+          : escapeHtml(prose),
     summary: typeof rawNode.summary === 'string' ? rawNode.summary : '',
     excerpt:
       typeof rawNode.excerpt === 'string' && rawNode.excerpt
         ? rawNode.excerpt
-        : truncateText(story.replace(/\s+/g, ' ').trim(), 150),
-    choices: normalizeChoices(rawNode.choices),
+        : truncateText(prose.replace(/\s+/g, ' ').trim(), 150),
+    paths: normalizePaths(rawNode.paths ?? rawNode.choices),
     packet: cloneJson(rawNode.packet ?? {}),
     memorySnapshot: createMemorySnapshot(rawNode.memorySnapshot),
     childEdgeIds: Array.isArray(rawNode.childEdgeIds) ? rawNode.childEdgeIds : [],
@@ -209,15 +223,15 @@ function buildRoots(graph, suggestedRootIds = []) {
   return Array.from(roots);
 }
 
-function buildLegacyMemorySnapshot(memory, sceneIndex) {
+function buildLegacyMemorySnapshot(memory, sceneIdx) {
   const snapshot = createMemorySnapshot(memory);
 
   return {
     ...snapshot,
-    story: snapshot.story.slice(0, sceneIndex + 1),
-    summary: snapshot.summary.slice(0, sceneIndex + 1),
-    choices: snapshot.choices.slice(0, sceneIndex + 1),
-    currentScene: sceneIndex
+    prose: snapshot.prose.slice(0, sceneIdx + 1),
+    summary: snapshot.summary.slice(0, sceneIdx + 1),
+    paths: snapshot.paths.slice(0, sceneIdx + 1),
+    sceneIndex: sceneIdx
   };
 }
 
@@ -281,11 +295,13 @@ export function createNarrativeNode(
     rawOutput = '',
     packet = {},
     memorySnapshot,
-    storyHtml
+    proseHtml
   }
 ) {
   const parentDepth = parentId && graph?.nodes?.[parentId] ? graph.nodes[parentId].depth : -1;
-  const story = typeof packet?.story === 'string' ? packet.story : '';
+  const prose = typeof packet?.prose === 'string' ? packet.prose
+    : typeof packet?.story === 'string' ? packet.story
+    : '';
 
   return createBaseNode({
     id: makeNodeId(),
@@ -296,10 +312,10 @@ export function createNarrativeNode(
     prompt,
     rawOutput,
     title: typeof packet?.title === 'string' ? packet.title : '',
-    story,
-    storyHtml: typeof storyHtml === 'string' ? storyHtml : escapeHtml(story),
+    prose,
+    proseHtml: typeof proseHtml === 'string' ? proseHtml : escapeHtml(prose),
     summary: typeof packet?.summary === 'string' ? packet.summary : '',
-    choices: normalizeChoices(packet?.choices),
+    paths: normalizePaths(packet?.paths ?? packet?.choices),
     packet: cloneJson(packet ?? {}),
     memorySnapshot: createMemorySnapshot(memorySnapshot),
     childEdgeIds: [],
@@ -418,7 +434,7 @@ export function getActiveNarrativePathIds(graph) {
   return getNarrativeNodePathIds(graph, graph?.activeNodeId);
 }
 
-export function buildStorySegmentsForNode(graph, nodeId, animateNodeId = null) {
+export function buildSceneSegments(graph, nodeId, animateNodeId = null) {
   return getNarrativeNodePath(graph, nodeId).flatMap((node, index) => {
     const segments = [];
 
@@ -432,7 +448,7 @@ export function buildStorySegmentsForNode(graph, nodeId, animateNodeId = null) {
     }
 
     segments.push({
-      html: node.storyHtml || escapeHtml(node.story),
+      html: node.proseHtml || escapeHtml(node.prose),
       animate: animateNodeId === node.id,
       nodeId: node.id,
       type: 'scene'
@@ -441,6 +457,9 @@ export function buildStorySegmentsForNode(graph, nodeId, animateNodeId = null) {
     return segments;
   });
 }
+
+// Backward-compat alias
+export const buildStorySegmentsForNode = buildSceneSegments;
 
 export function getNarrativeDisplayTitle(graph, nodeId, fallback = 'Your Adventure Awaits...') {
   const path = getNarrativeNodePath(graph, nodeId);
@@ -452,24 +471,32 @@ export function getNarrativeDisplayTitle(graph, nodeId, fallback = 'Your Adventu
 
 export function getNarrativeNodeExcerpt(node, fallback = 'An unwritten page waits here.') {
   if (!node) return fallback;
-  return node.excerpt || truncateText((node.story || '').replace(/\s+/g, ' ').trim(), 150) || fallback;
+  return node.excerpt || truncateText((node.prose || node.story || '').replace(/\s+/g, ' ').trim(), 150) || fallback;
 }
 
 export function createGraphFromResumeState(memory, ui = {}) {
-  const stories = Array.isArray(memory?.story) ? memory.story : [];
+  // Support both new (prose/paths) and old (story/choices) field names
+  const proseList = Array.isArray(memory?.prose) ? memory.prose
+    : Array.isArray(memory?.story) ? memory.story
+    : [];
   const summaries = Array.isArray(memory?.summary) ? memory.summary : [];
-  const storedChoices = Array.isArray(memory?.choices) ? memory.choices : [];
+  const storedPaths = Array.isArray(memory?.paths) ? memory.paths
+    : Array.isArray(memory?.choices) ? memory.choices
+    : [];
   const fallbackGraph = createEmptyNarrativeGraph();
 
-  if (stories.length === 0) {
+  // Support both new (displayedPaths) and old (displayedChoices) field names in ui
+  const displayedPaths = ui.displayedPaths ?? ui.displayedChoices ?? [];
+
+  if (proseList.length === 0) {
     const node = createBaseNode({
       id: 'resume_node',
       parentId: null,
       title: typeof ui.displayedTitle === 'string' ? ui.displayedTitle : 'Your Adventure Awaits...',
-      story: '',
-      storyHtml: '',
+      prose: '',
+      proseHtml: '',
       summary: '',
-      choices: normalizeChoices(ui.displayedChoices),
+      paths: normalizePaths(displayedPaths),
       prompt: typeof ui.prompt === 'string' ? ui.prompt : '',
       rawOutput: typeof ui.rawOutput === 'string' ? ui.rawOutput : '',
       packet: {},
@@ -492,26 +519,26 @@ export function createGraphFromResumeState(memory, ui = {}) {
   let parentId = null;
   const now = Date.now();
 
-  stories.forEach((story, index) => {
-    const isCurrentNode = index === stories.length - 1;
+  proseList.forEach((prose, index) => {
+    const isCurrentNode = index === proseList.length - 1;
     const packet = {
       title:
         index === 0 && typeof ui.displayedTitle === 'string' ? ui.displayedTitle : '',
-      story,
+      prose,
       summary: summaries[index] ?? '',
-      choices: isCurrentNode ? normalizeChoices(ui.displayedChoices) : []
+      paths: isCurrentNode ? normalizePaths(displayedPaths) : []
     };
 
     const node = createNarrativeNode(graph, {
       parentId,
       choiceFromParent:
-        index === 0 ? '' : storedChoices[index] ?? storedChoices[index - 1] ?? '',
+        index === 0 ? '' : storedPaths[index] ?? storedPaths[index - 1] ?? '',
       choiceIndexFromParent: null,
       prompt: isCurrentNode && typeof ui.prompt === 'string' ? ui.prompt : '',
       rawOutput: isCurrentNode && typeof ui.rawOutput === 'string' ? ui.rawOutput : '',
       packet,
       memorySnapshot: buildLegacyMemorySnapshot(memory, index),
-      storyHtml: escapeHtml(story)
+      proseHtml: escapeHtml(prose)
     });
 
     node.id = isCurrentNode ? 'resume_node' : `legacy_scene_${index}`;

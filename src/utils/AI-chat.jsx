@@ -1,27 +1,56 @@
 // src/utils/AI-chat.js
 import React, { useEffect, useRef, useState } from 'react';
 import { LLM_MODEL } from '../config/env';
-import { chat as llmChat } from '../services/llmClient';
+import { chat as llmChat, chatStream, extractStoryFromBuffer } from '../services/llmClient';
 import { createDebugLogger } from './debugLog';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 
 const debug = createDebugLogger('AI-chat');
 
-/** Public API used by components */
-export async function generateStory(prompt, callback) {
+/**
+ * Non-streaming scene generation.
+ * Accepts a prompt string or a messages array (system + user roles).
+ */
+export async function generateScene(promptOrMessages, callback) {
   try {
-    // Call proxy → upstream completion JSON
-    const upstream = await llmChat(prompt, { model: LLM_MODEL });
+    const upstream = await llmChat(promptOrMessages, { model: LLM_MODEL });
     if (callback) callback(upstream);
     return upstream;
   } catch (e) {
-    debug.error('[generateStory] error', e);
+    debug.error('[generateScene] error', e);
     if (callback) callback(null, e);
     throw e;
   }
 }
 
-/** Optional helper component you were using */
+/**
+ * Streaming scene generation.
+ * Calls onStoryChunk(text) with incremental prose text as it arrives.
+ * Calls onComplete(upstream) with the full response object when the stream ends.
+ */
+export async function generateSceneStream(messages, onStoryChunk, onComplete) {
+  let prevStoryLength = 0;
+  try {
+    const rawText = await chatStream(messages, (_delta, accumulated) => {
+      const result = extractStoryFromBuffer(accumulated);
+      if (result && result.text.length > prevStoryLength) {
+        onStoryChunk(result.text.slice(prevStoryLength));
+        prevStoryLength = result.text.length;
+      }
+    });
+    const upstream = { choices: [{ message: { content: rawText } }] };
+    if (onComplete) onComplete(upstream);
+  } catch (e) {
+    debug.error('[generateSceneStream] error', e);
+    throw e;
+  }
+}
+
+// Backward-compat alias
+export const generateStory = generateScene;
+export const generateStoryStream = generateSceneStream;
+
+/** Optional helper component */
 const GameStart = ({ onStoryGenerated, prompt }) => {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
@@ -34,7 +63,7 @@ const GameStart = ({ onStoryGenerated, prompt }) => {
 
     setLoading(true);
     setErr(null);
-    generateStory(prompt, (upstream) => {
+    generateScene(prompt, (upstream) => {
       const payload = extractAndNormalizeAiResponse(upstream);
       if (payload) onStoryGenerated && onStoryGenerated(payload);
       setLoading(false);

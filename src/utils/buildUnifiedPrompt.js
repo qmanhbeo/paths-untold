@@ -2,20 +2,19 @@
 import { injectPhaseOutLogicIntoPrompt } from './phaseOutManager';
 
 /**
- * Build the LLM prompt with World/Arc state + compact companions
- * while keeping your existing JSON fields (title, story, choices, characters, summary).
- * Also asks for optional deltas: sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta.
+ * Build the LLM prompt with World/Arc state + compact companions.
+ * Returns { system, user } for use as separate OpenAI message roles.
  *
  * @param {object} gameMemory
  * @param {string} latestChoice
  * @param {object|null} playerIntro
  */
-export const buildUnifiedPrompt = (gameMemory, latestChoice, playerIntro = null) => {
+export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) => {
   const {
     summary = [],
-    story = [],
+    prose = [],
     companions = [],
-    currentScene = 0,
+    sceneIndex = 0,
     world = {
       clock: { day: 1, time: 'day' },
       location: { name: 'Unknown Place', tags: [] },
@@ -27,7 +26,7 @@ export const buildUnifiedPrompt = (gameMemory, latestChoice, playerIntro = null)
   } = gameMemory;
 
   const latestSummary = summary.at(-1) || '';
-  const latestScene = story.at(-1) || '';
+  const latestProse = prose.at(-1) || '';
 
   // Only list ACTIVE companions in the prompt (keeps context focused)
   const activeCompanions = (companions || []).filter(c => (c.status ?? 'active') === 'active');
@@ -37,8 +36,8 @@ export const buildUnifiedPrompt = (gameMemory, latestChoice, playerIntro = null)
       ).join('\n')
     : 'None yet';
 
-  const phaseOutPromptExtras = injectPhaseOutLogicIntoPrompt(companions, currentScene);
-  const isFirstScene = story.length === 0;
+  const phaseOutPromptExtras = injectPhaseOutLogicIntoPrompt(companions, sceneIndex);
+  const isFirstScene = prose.length === 0;
 
   const worldBlock = `
 World:
@@ -57,32 +56,11 @@ World:
 - Tone: ${playerIntro?.selectedTone?.join(', ') || 'unspecified'}
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
 
-Open with a vivid, immersive introduction (show, don’t tell). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps.`
+Open with a vivid, immersive introduction (show, don't tell). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps.`
     : `Continue the story with strong pacing and emotional nuance.
 Begin naturally by reflecting the player's last choice as dialogue or action.`;
 
-  // We’ll always allow "title" in output; your UI only uses it once if not set.
-  return `
-You are the narrative engine for a branching story game. Write in clear, vivid prose.
-
-${worldBlock}
-
-Companions (active):
-${companionString}
-
-Summary So Far:
-${latestSummary}
-
-Last Scene:
-${latestScene}
-
-Player's Latest Choice:
-${latestChoice}
-
-${phaseOutPromptExtras}
-
-TASK:
-${taskBlock}
+  const system = `You are the narrative engine for a branching story game. Write in clear, vivid prose.
 
 RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
@@ -93,8 +71,8 @@ RULES:
 OUTPUT SHAPE (STRICT JSON):
 {
   "title": "string",
-  "story": "string",
-  "choices": ["string", "string", "string", "string"],
+  "prose": "string",
+  "paths": ["string", "string", "string", "string"],
   "characters": [
     {
       "name": "string",
@@ -133,6 +111,29 @@ OUTPUT SHAPE (STRICT JSON):
     }
   ],
   "arcDelta": { "tension": 0, "beat": 0, "chapter": 0 }
-}
-`.trim();
+}`.trim();
+
+  const user = `${worldBlock}
+
+Companions (active):
+${companionString}
+
+Summary So Far:
+${latestSummary}
+
+Last Scene:
+${latestProse}
+
+Player's Latest Choice:
+${latestChoice}
+
+${phaseOutPromptExtras}
+
+TASK:
+${taskBlock}`.trim();
+
+  return { system, user };
 };
+
+// Backward-compat alias
+export const buildUnifiedPrompt = buildScenePrompt;

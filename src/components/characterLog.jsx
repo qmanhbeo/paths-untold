@@ -2,7 +2,7 @@ import React from 'react';
 import { IS_DEV } from '../config/env';
 import { getComputedEmotions } from '../utils/emotionCalculator';
 
-const CharacterLog = ({ companions, onClose, currentScene }) => {
+const CharacterLog = ({ companions, onClose, sceneIndex }) => {
   return (
     <div className="w-96 h-full bg-black bg-opacity-80 text-white p-4 overflow-y-auto border-l border-yellow-400">
       <div className="flex justify-between items-center mb-4">
@@ -39,7 +39,7 @@ const CharacterLog = ({ companions, onClose, currentScene }) => {
               <p><span className="font-semibold">Role:</span> {char.role}</p>
               <p><span className="font-semibold">Personality:</span> {char.personality}</p>
               <p><span className="font-semibold">Last Spoken:</span> {char.lastSpoken?.line || 'N/A'}</p>
-              <p><span className="font-semibold">Last Seen:</span> {typeof char.lastUpdatedScene === 'number' && typeof currentScene === 'number' ? `${currentScene - char.lastUpdatedScene} scenes ago` : 'Unknown'}</p>
+              <p><span className="font-semibold">Last Seen:</span> {typeof char.lastUpdatedScene === 'number' && typeof sceneIndex === 'number' ? `${sceneIndex - char.lastUpdatedScene} scenes ago` : 'Unknown'}</p>
 
               <p className="mt-2"><span className="font-semibold">Emotions (derived from history):</span></p>
               <ul className="ml-4 list-disc">

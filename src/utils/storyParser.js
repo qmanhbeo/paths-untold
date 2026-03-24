@@ -4,15 +4,15 @@
 // Accepts either:
 //  - full OpenAI chat completion object,
 //  - a raw string containing JSON (with/without ```json fences), or
-//  - an already-shaped object { title, story, choices, ... }.
+//  - an already-shaped object { title, prose, paths, ... }.
 //
 // Exports:
-//  - extractAndNormalizeAiResponse(upstream): returns { title, story, choices, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta }
-//  - parseGeneratedStory(rawAIX, displayedStory, choice): (LEGACY) your old markdown-style extractor kept for compatibility.
+//  - extractAndNormalizeAiResponse(upstream): returns { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta }
+//  - parseGeneratedScene(rawAIX, displayedProse, choice): (LEGACY) your old markdown-style extractor kept for compatibility.
 
 function robustParseJSON(raw) {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    if ('title' in raw || 'story' in raw || 'choices' in raw) {
+    if ('title' in raw || 'prose' in raw || 'paths' in raw || 'story' in raw || 'choices' in raw) {
       return raw;
     }
     return null;
@@ -44,8 +44,8 @@ function robustParseJSON(raw) {
   // 4) normalize quotes + remove trailing commas and retry
   const core = fenced ? fenced[1] : (first !== -1 ? raw.slice(first, last + 1) : raw);
   const normalized = core
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
     .replace(/,\s*([}\]])/g, '$1');
 
   obj = tryParse(normalized);
@@ -93,15 +93,15 @@ function extractResponsesApiText(upstream) {
 }
 
 // ----------------- Normalization helpers (pure) -----------------
-function coerceChoices(v) {
-  if (Array.isArray(v)) {
-    return v
-      .map((c) => (typeof c === 'string' ? c : (c && c.text) || ''))
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 8);
-  }
-  return [];
+function coercePaths(v) {
+  // Accept both new field name ("paths") and old ("choices") for backward compat
+  const arr = Array.isArray(v) ? v : null;
+  if (!arr) return [];
+  return arr
+    .map((c) => (typeof c === 'string' ? c : (c && c.text) || ''))
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function coerceCharacters(v) {
@@ -168,13 +168,16 @@ function coerceArcDelta(v) {
   return { tension: t, beat: b, chapter: c };
 }
 
-function normalizeStoryObject(obj, raw) {
+function normalizeScenePacket(obj, raw) {
   if (!obj || typeof obj !== 'object') {
-    return { title: 'Untitled', story: raw || '', choices: [], characters: [], summary: '' };
+    return { title: 'Untitled', prose: raw || '', paths: [], characters: [], summary: '' };
   }
   const title = typeof obj.title === 'string' && obj.title.trim() ? obj.title.trim() : 'Untitled';
-  const story = typeof obj.story === 'string' ? obj.story : (raw || '');
-  const choices = coerceChoices(obj.choices);
+  // Accept new field names (prose/paths) or old (story/choices) for backward compat
+  const prose = typeof obj.prose === 'string' ? obj.prose
+    : typeof obj.story === 'string' ? obj.story
+    : (raw || '');
+  const paths = coercePaths(obj.paths ?? obj.choices);
   const characters = coerceCharacters(obj.characters);
   const summary = typeof obj.summary === 'string' ? obj.summary : '';
 
@@ -184,19 +187,23 @@ function normalizeStoryObject(obj, raw) {
   const companionsDelta = coerceCompanionsDelta(obj.companionsDelta);
   const arcDelta = coerceArcDelta(obj.arcDelta);
 
-  return { title, story, choices, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta };
+  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta };
 }
 
 // ----------------- Public: central entry point -----------------
 export function extractAndNormalizeAiResponse(upstream) {
   // Case A: already a final object with expected fields
-  if (upstream && typeof upstream === 'object' && upstream.title && upstream.story && upstream.choices) {
+  if (upstream && typeof upstream === 'object' && upstream.title && (upstream.prose || upstream.story) && (upstream.paths || upstream.choices)) {
     const maybeFixed = { ...upstream };
+    if (Array.isArray(maybeFixed.prose)) maybeFixed.prose = maybeFixed.prose.join('\n');
     if (Array.isArray(maybeFixed.story)) maybeFixed.story = maybeFixed.story.join('\n');
+    if (Array.isArray(maybeFixed.paths)) {
+      maybeFixed.paths = maybeFixed.paths.map(c => (typeof c === 'string' ? c : c?.text ?? '')).filter(Boolean);
+    }
     if (Array.isArray(maybeFixed.choices)) {
       maybeFixed.choices = maybeFixed.choices.map(c => (typeof c === 'string' ? c : c?.text ?? '')).filter(Boolean);
     }
-    return normalizeStoryObject(maybeFixed, '');
+    return normalizeScenePacket(maybeFixed, '');
   }
 
   // Case B: OpenAI chat completion (or similar)
@@ -216,12 +223,13 @@ export function extractAndNormalizeAiResponse(upstream) {
   if (!text) return null;
 
   const parsed = robustParseJSON(text);
-  return normalizeStoryObject(parsed, text);
+  if (!parsed) return null;
+  return normalizeScenePacket(parsed, text);
 }
 
 // ----------------- LEGACY export (kept for compatibility) -----------------
-// Your previous markdown-style parser. Left intact in case anything else still uses it.
-export const parseGeneratedStory = (rawAIX, displayedStory, choice = '') => {
+// Markdown-style parser kept in case anything external still uses it.
+export const parseGeneratedScene = (rawAIX, displayedProse, choice = '') => {
   // Extract title
   const titleRegex = /- \*\*Title:\*\* (.*?)(?:\n|$)/;
   const titleMatch = rawAIX.match(titleRegex);
@@ -230,18 +238,21 @@ export const parseGeneratedStory = (rawAIX, displayedStory, choice = '') => {
   // Extract story
   const storyRegex = /\*\*Story:\*\*\s*([\s\S]*?)(?=\n\*\*Choice|\n- \*\*Choice|\n$)/;
   const storyMatch = rawAIX.match(storyRegex);
-  const storyX = storyMatch ? storyMatch[1].trim() : 'No story available.';
+  const proseX = storyMatch ? storyMatch[1].trim() : 'No prose available.';
 
-  // Build updated HTML story (with player choice if any)
-  const fullStory = `${displayedStory}${displayedStory ? `<br /><br /><strong>The player chooses:</strong> ${choice}.<br /><br />` : ''}${storyX.replace(/\n/g, '<br />')}`;
+  // Build updated HTML prose (with player choice if any)
+  const fullProse = `${displayedProse}${displayedProse ? `<br /><br /><strong>The player chooses:</strong> ${choice}.<br /><br />` : ''}${proseX.replace(/\n/g, '<br />')}`;
 
-  // Extract choices
+  // Extract choices (paths)
   const choiceRegex = /\*\*Choice (?:A|B|C|D):\*\* (.*?)(?:\n|$)/g;
-  const fourChoicesX = [];
+  const fourPathsX = [];
   let match;
   while ((match = choiceRegex.exec(rawAIX)) !== null) {
-    fourChoicesX.push(match[1].trim().replace(/\.$/, ''));
+    fourPathsX.push(match[1].trim().replace(/\.$/, ''));
   }
 
-  return { storyTitle, fullStory, storyX, fourChoicesX };
+  return { storyTitle, fullProse, proseX, fourPathsX };
 };
+
+// Backward-compat alias
+export const parseGeneratedStory = parseGeneratedScene;

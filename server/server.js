@@ -9,7 +9,7 @@ app.use(express.json({ limit: '1mb' }));
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const UPSTREAM_URL = process.env.UPSTREAM_URL || 'https://api.openai.com/v1/chat/completions';
 const MODEL = process.env.MODEL || 'gpt-4o-mini';
-const MAX_COMPLETION_TOKENS = Number(process.env.MAX_COMPLETION_TOKENS || (MODEL.startsWith('gpt-5') ? 2400 : 1100));
+const MAX_COMPLETION_TOKENS = Number(process.env.MAX_COMPLETION_TOKENS || (MODEL.startsWith('gpt-5') ? 2400 : 1600));
 const REASONING_EFFORT =
   process.env.REASONING_EFFORT || (MODEL.startsWith('gpt-5') ? 'minimal' : '');
 
@@ -24,7 +24,8 @@ const ChatSchema = z.object({
     role: z.enum(['system','user','assistant']),
     content: z.string().min(1)
   })).min(1),
-  model: z.string().optional()
+  model: z.string().optional(),
+  stream: z.boolean().optional()
 });
 
 const DebugLogSchema = z.object({
@@ -33,7 +34,7 @@ const DebugLogSchema = z.object({
   args: z.array(z.any()).max(20).default([])
 });
 
-function buildUpstreamBody(messages) {
+function buildUpstreamBody(messages, stream = false) {
   const body = {
     model: MODEL,
     messages,
@@ -41,9 +42,8 @@ function buildUpstreamBody(messages) {
     response_format: { type: 'json_object' }
   };
 
-  if (REASONING_EFFORT) {
-    body.reasoning_effort = REASONING_EFFORT;
-  }
+  if (stream) body.stream = true;
+  if (REASONING_EFFORT) body.reasoning_effort = REASONING_EFFORT;
 
   return body;
 }
@@ -79,13 +79,14 @@ app.post('/api/chat', async (req, res) => {
     return res.status(500).json({ error: 'Server misconfigured: missing OPENAI_API_KEY' });
   }
 
-  const { messages } = parsed.data;
+  const { messages, stream: wantsStream } = parsed.data;
 
   console.log('[chat] -> upstream', {
     model: MODEL,
     messages: messages.length,
     max_completion_tokens: MAX_COMPLETION_TOKENS,
-    reasoning_effort: REASONING_EFFORT || 'default'
+    reasoning_effort: REASONING_EFFORT || 'default',
+    stream: wantsStream ?? false
   });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60000);
@@ -97,7 +98,7 @@ app.post('/api/chat', async (req, res) => {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(buildUpstreamBody(messages)),
+      body: JSON.stringify(buildUpstreamBody(messages, wantsStream ?? false)),
       signal: controller.signal
     });
 
@@ -113,6 +114,30 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
+    // --- Streaming path: pipe SSE bytes directly to client ---
+    if (wantsStream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      const reader = upstreamRes.body.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value, { stream: true }));
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      res.end();
+      console.log('[chat] stream complete');
+      return;
+    }
+
+    // --- Non-streaming path (unchanged) ---
     const data = await upstreamRes.json();
     const content = extractTextContent(data?.choices?.[0]?.message?.content);
     console.log('[chat] ok', {

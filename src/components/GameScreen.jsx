@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { generateStory } from '../utils/AI-chat';
+import { generateScene } from '../utils/AI-chat';
 import { createDebugLogger } from '../utils/debugLog';
 import { saveGameToSlot } from '../utils/saveSystem';
-import { buildUnifiedPrompt } from '../utils/buildUnifiedPrompt';
+import { buildScenePrompt } from '../utils/buildUnifiedPrompt';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 import {
-  buildStorySegmentsForNode,
+  buildSceneSegments,
   createEmptyNarrativeGraph,
   createGraphFromResumeState,
   createMemorySnapshot,
@@ -32,10 +32,10 @@ const debug = createDebugLogger('GameScreen');
 
 const createFreshMemory = () => ({
   summary: [],
-  choices: [],
+  paths: [],
   companions: [],
-  story: [],
-  currentScene: 0,
+  prose: [],
+  sceneIndex: 0,
   world: {
     clock: { day: 1, time: 'day' },
     location: { name: 'Unknown Place', tags: [] },
@@ -61,8 +61,8 @@ const ensureWorldArc = (mem) => ({
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [displayedTitle, setDisplayedTitle] = useState('Your Adventure Awaits...');
   const [fadeInTitle, setFadeInTitle] = useState(true);
-  const [storySegments, setStorySegments] = useState([]);
-  const [displayedChoices, setDisplayedChoices] = useState([]);
+  const [segments, setSegments] = useState([]);
+  const [displayedPaths, setDisplayedPaths] = useState([]);
   const [rawOutput, setRawOutput] = useState('');
   const [showSidebar, setShowSidebar] = useState(false);
   const [showCharacterPanel, setShowCharacterPanel] = useState(false);
@@ -75,7 +75,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [stickToBottom, setStickToBottom] = useState(true);
 
   const storyBoxRef = useRef(null);
-  const storyGenerated = useRef(false);
+  const sceneGenerated = useRef(false);
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -129,13 +129,13 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setDisplayedTitle(nextTitle);
     setFadeInTitle(true);
     setRawOutput(node.rawOutput || '');
-    setDisplayedChoices(node.choices || []);
-    setStorySegments(
-      buildStorySegmentsForNode(nextGraph, nodeId, options.animateNodeId ?? null)
+    setDisplayedPaths(node.paths || []);
+    setSegments(
+      buildSceneSegments(nextGraph, nodeId, options.animateNodeId ?? null)
     );
     setSelectedNarrativeNodeId(nodeId);
     setIsLoading(false);
-    storyGenerated.current = true;
+    sceneGenerated.current = true;
   };
 
   useEffect(() => {
@@ -154,26 +154,27 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       return;
     }
 
-    if (!storyGenerated.current && !storyOptions?.resumeFromSave && prompt) {
+    if (!sceneGenerated.current && !storyOptions?.resumeFromSave && prompt) {
       const initialMemory = createFreshMemory();
       setGameMemory(initialMemory);
       memoryRef.current = initialMemory;
       setIsLoading(true);
 
-      const openingPrompt = buildUnifiedPrompt(initialMemory, '', storyOptions);
-      debug.log('[PROMPT 0]', openingPrompt);
+      const { system: openingSys, user: openingUser } = buildScenePrompt(initialMemory, '', storyOptions);
+      const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
+      debug.log('[PROMPT 0]', openingUser);
 
-      generateStory(openingPrompt, async (rawAI0) => {
-        await handleRawAIX(rawAI0, {
+      generateScene(openingMessages, async (rawAI0) => {
+        await handleSceneResponse(rawAI0, {
           choice: '',
           parentId: null,
-          promptForNode: openingPrompt,
+          promptForNode: openingUser,
           baseMemory: initialMemory
         });
         setIsLoading(false);
       });
 
-      storyGenerated.current = true;
+      sceneGenerated.current = true;
     }
   }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,12 +197,22 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
   useEffect(() => {
     const el = storyBoxRef.current;
-    if (el && stickToBottom) {
+    if (!el) return;
+
+    // Only auto-scroll if the player is already near the bottom
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (!isAtBottom) return;
+
+    const choiceStrongs = el.querySelectorAll('[data-segment-type="choice"] strong');
+    if (choiceStrongs.length > 0) {
+      const target = choiceStrongs[choiceStrongs.length - 1];
+      setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    } else {
       smoothScrollToBottom(el);
     }
-  }, [storySegments.length, stickToBottom]);
+  }, [segments.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRawAIX = async (rawAIX, options = {}) => {
+  const handleSceneResponse = async (rawAIX, options = {}) => {
     const {
       choice = '',
       retry = false,
@@ -211,12 +222,12 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       baseMemory = memoryRef.current
     } = options;
 
-    const sceneIndex = Array.isArray(baseMemory?.story) ? baseMemory.story.length : 0;
+    const sceneIdx = Array.isArray(baseMemory?.prose) ? baseMemory.prose.length : 0;
     const rawOutputText =
       typeof rawAIX === 'string' ? rawAIX : JSON.stringify(rawAIX, null, 2);
 
-    debug.log(`[RAW AI OUTPUT - Scene ${sceneIndex}]`, rawAIX);
-    setDisplayedChoices([]);
+    debug.log(`[RAW AI OUTPUT - Scene ${sceneIdx}]`, rawAIX);
+    setDisplayedPaths([]);
     setRawOutput(rawOutputText);
 
     try {
@@ -239,24 +250,29 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       restoreNode(nextGraph, newNode.id, { animateNodeId: newNode.id });
 
       return {
-        storyX: obj.story,
-        sceneIdx: nextMem.currentScene,
-        fourChoicesX: newNode.choices
+        prose: obj.prose,
+        sceneIndex: nextMem.sceneIndex,
+        paths: newNode.paths
       };
     } catch (e) {
       debug.error('Parse/update failed:', e);
 
       if (!retry) {
         debug.warn('Retrying generation due to malformed output...');
-        const retryPrompt = buildUnifiedPrompt(baseMemory, choice, storyOptions);
+        setSegments((prev) => [
+          ...prev,
+          { html: '<i class="text-amber-300/70">The story hesitates for a moment\u2026</i>', animate: true, type: 'retry' }
+        ]);
+        const { system: retrySys, user: retryUser } = buildScenePrompt(baseMemory, choice, storyOptions);
+        const retryMessages = [{ role: 'system', content: retrySys }, { role: 'user', content: retryUser }];
         return new Promise((resolve) => {
-          generateStory(retryPrompt, async (newResponse) => {
-            const result = await handleRawAIX(newResponse, {
+          generateScene(retryMessages, async (newResponse) => {
+            const result = await handleSceneResponse(newResponse, {
               choice,
               retry: true,
               parentId,
               choiceIndexFromParent,
-              promptForNode: retryPrompt,
+              promptForNode: retryUser,
               baseMemory
             });
             resolve(result);
@@ -264,8 +280,8 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         });
       }
 
-      setDisplayedChoices([]);
-      setStorySegments((prev) => [
+      setDisplayedPaths([]);
+      setSegments((prev) => [
         ...prev,
         {
           html: '<i class="text-red-300">Failed to load story after retry. Please choose again or reload.</i>',
@@ -275,9 +291,9 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       ]);
 
       return {
-        storyX: '',
-        sceneIdx: baseMemory.currentScene,
-        fourChoicesX: []
+        prose: '',
+        sceneIndex: baseMemory.sceneIndex ?? 0,
+        paths: []
       };
     }
   };
@@ -304,17 +320,18 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setIsLoading(true);
 
     const baseMemory = createMemorySnapshot(memoryRef.current);
-    const nextSceneIndex = (baseMemory.currentScene ?? 0) + 1;
-    const branchPrompt = buildUnifiedPrompt(baseMemory, choice, storyOptions);
+    const nextSceneIndex = (baseMemory.sceneIndex ?? 0) + 1;
+    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, storyOptions);
+    const branchMessages = [{ role: 'system', content: branchSys }, { role: 'user', content: branchUser }];
 
-    debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchPrompt);
+    debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchUser);
 
-    await generateStory(branchPrompt, async (nextScene) => {
-      await handleRawAIX(nextScene, {
+    await generateScene(branchMessages, async (nextScene) => {
+      await handleSceneResponse(nextScene, {
         choice,
         parentId: activeNodeId,
         choiceIndexFromParent: choiceIndex,
-        promptForNode: branchPrompt,
+        promptForNode: branchUser,
         baseMemory
       });
       setIsLoading(false);
@@ -338,8 +355,8 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       options: { ...storyOptions, prompt, resumeFromSave: true },
       memory: gameMemory,
       ui: {
-        displayedStory: storySegments.map((segment) => segment.html).join(''),
-        displayedChoices,
+        displayedStory: segments.map((segment) => segment.html).join(''),
+        displayedPaths,
         displayedTitle,
         rawOutput,
         prompt: getNarrativeNode(normalizedGraph, normalizedGraph.activeNodeId)?.prompt ?? '',
@@ -364,7 +381,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         <div className="flex flex-row animate-slide-in-left">
           <CharacterLog
             companions={gameMemory.companions || []}
-            currentScene={gameMemory.currentScene}
+            sceneIndex={gameMemory.sceneIndex}
             onClose={() => setShowCharacterPanel(false)}
           />
         </div>
@@ -458,14 +475,15 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           ref={storyBoxRef}
         >
           <div className="h-full w-full resize-none border-none outline-none">
-            {storySegments.length === 0 ? (
+            {segments.length === 0 ? (
               <p className="font-cardo italic text-white opacity-80 mix-blend-difference animate-pulse-slow">
                 Almost There... Your World is Forming...
               </p>
             ) : (
-              storySegments.map((segment, index) => (
+              segments.map((segment, index) => (
                 <p
                   key={`${segment.nodeId ?? 'segment'}-${index}`}
+                  data-segment-type={segment.type}
                   className={`font-cardo text-white mix-blend-difference ${
                     segment.animate ? 'animate-blur-in' : ''
                   }`}
@@ -478,12 +496,12 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
         <div className="flex-shrink-0 animate-fade-in-slow">
           <ChoiceGrid
-            choices={displayedChoices}
+            choices={displayedPaths}
             onChoice={handleChoiceClick}
             disabled={isLoading}
           />
           <p className="mt-4 text-white mix-blend-difference">
-            Scene #: {gameMemory.currentScene}
+            Scene #: {gameMemory.sceneIndex}
           </p>
         </div>
       </div>

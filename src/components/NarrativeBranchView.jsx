@@ -452,10 +452,10 @@ const NarrativeBranchView = ({
               <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
                 <section className="rounded-[20px] border border-white/10 bg-black/30 p-4">
                   <h4 className="font-cardo text-xs uppercase tracking-[0.28em] text-amber-200/70">
-                    Story
+                    Prose
                   </h4>
                   <p className="mt-3 whitespace-pre-wrap font-cardo text-sm leading-7 text-white/88">
-                    {selectedNode.story || 'No story stored for this scene.'}
+                    {selectedNode.prose || selectedNode.story || 'No prose stored for this scene.'}
                   </p>
                 </section>
 
@@ -478,9 +478,9 @@ const NarrativeBranchView = ({
                     </p>
                   </div>
 
-                  {selectedNode.choices?.length > 0 ? (
+                  {selectedNode.paths?.length > 0 ? (
                     <ul className="mt-3 space-y-2">
-                      {selectedNode.choices.map((choice, index) => {
+                      {selectedNode.paths.map((choice, index) => {
                         const childId = findChildNodeId(graph, selectedNode.id, choice, index);
                         const childNode = childId ? getNarrativeNode(graph, childId) : null;
 
@@ -501,8 +501,8 @@ const NarrativeBranchView = ({
                     </ul>
                   ) : (
                     <p className="mt-3 font-cardo text-sm leading-6 text-white/55">
-                      This scene has no stored choices. Older converted saves only preserve
-                      complete choice history for nodes created after the graph system existed.
+                      This scene has no stored paths. Older converted saves only preserve
+                      complete path history for nodes created after the graph system existed.
                     </p>
                   )}
                 </section>

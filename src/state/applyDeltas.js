@@ -42,7 +42,7 @@ export function applyDeltas(mem, out) {
           c.relationshipHistory = (c.relationshipHistory || []).concat({
             event: h.event,
             impact,
-            scene: mem.currentScene
+            scene: mem.sceneIndex
           });
         }
       }

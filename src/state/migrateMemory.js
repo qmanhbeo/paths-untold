@@ -1,29 +1,41 @@
 // src/state/migrateMemory.js
 
 /**
- * Bring older saves (summary/choices/story/companions/currentScene) up to date.
- * Returns a fully shaped GameMemory.
- * Old shape is documented in game-logic.md. 
+ * Bring older saves up to date with the current GameMemory shape.
+ * Old saves used: story[], choices[], currentScene
+ * New shape uses: prose[], paths[], sceneIndex
  */
 
 export function migrateMemory(raw) {
     const isNew = raw && raw.world && raw.arc;
-    if (isNew) return raw;
-  
+
     // Defaults for new fields
-    const world = {
+    const world = isNew ? raw.world : {
       clock: { day: 1, time: "day" },
       location: { name: "Unknown Place", tags: [] },
       sceneTags: [],
       objectives: [],
       flags: {}
     };
-  
-    const arc = { chapter: 1, beat: 0, tension: 3 };
-  
+
+    const arc = isNew ? raw.arc : { chapter: 1, beat: 0, tension: 3 };
+
+    // Handle both old field names (story/choices/currentScene) and new (prose/paths/sceneIndex)
+    const prose = Array.isArray(raw?.prose) ? raw.prose
+      : Array.isArray(raw?.story) ? raw.story
+      : [];
+
+    const paths = Array.isArray(raw?.paths) ? raw.paths
+      : Array.isArray(raw?.choices) ? raw.choices
+      : [];
+
+    const sceneIndex = Number.isFinite(raw?.sceneIndex) ? raw.sceneIndex
+      : Number.isFinite(raw?.currentScene) ? raw.currentScene
+      : 0;
+
     return {
-      story: raw?.story || [],
-      choices: raw?.choices || [],
+      prose,
+      paths,
       summary: raw?.summary || [],
       companions: (raw?.companions || []).map(c => ({
         id: c.id || slug(c.name || "npc"),
@@ -39,13 +51,12 @@ export function migrateMemory(raw) {
         status: c.status || "active",
         lastUpdatedScene: Number.isFinite(c.lastUpdatedScene) ? c.lastUpdatedScene : 0
       })),
-      currentScene: Number.isFinite(raw?.currentScene) ? raw.currentScene : 0,
+      sceneIndex,
       world,
       arc
     };
   }
-  
+
   function slug(s) {
     return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
   }
-  

@@ -41,9 +41,9 @@ const SceneLog = ({ scenes, onClose }) => {
                     </p>
                   )}
                   <p className="mb-2 whitespace-pre-wrap">
-                    <strong>Story:</strong>
+                    <strong>Prose:</strong>
                     <br />
-                    {scene.story || 'No story stored for this scene.'}
+                    {scene.prose || scene.story || 'No prose stored for this scene.'}
                   </p>
                   {scene.summary && (
                     <p className="whitespace-pre-wrap">

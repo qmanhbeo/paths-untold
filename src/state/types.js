@@ -67,11 +67,11 @@
 
 /**
  * @typedef {{
- *   story: string[],
- *   choices: string[],
+ *   prose: string[],
+ *   paths: string[],
  *   summary: string[],
  *   companions: Companion[],
- *   currentScene: number,
+ *   sceneIndex: number,
  *   world: WorldState,
  *   arc: { chapter: number, beat: number, tension: number }
  * }} GameMemory
