@@ -21,10 +21,6 @@ function truncate(text = '', length = 54) {
   return text.length > length ? `${text.slice(0, Math.max(0, length - 3)).trimEnd()}...` : text;
 }
 
-function createEdgePath(edge) {
-  const curve = Math.max(72, (edge.targetX - edge.sourceX) * 0.42);
-  return `M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX + curve} ${edge.sourceY}, ${edge.targetX - curve} ${edge.targetY}, ${edge.targetX} ${edge.targetY}`;
-}
 
 function applyZoomFromPoint(view, requestedScale, origin) {
   const scale = clamp(requestedScale, MIN_SCALE, MAX_SCALE);
@@ -200,15 +196,30 @@ const NarrativeBranchView = ({ graph, onJumpToNode, onClose }) => {
   }, [activePathIds, layout.edges]);
 
   const viewportRef = useRef(null);
+  const panContainerRef = useRef(null);
   const panStateRef = useRef(null);
+  const viewRef = useRef({ x: 72, y: 72, scale: 1 });
   const [view, setView] = useState({ x: 72, y: 72, scale: 1 });
   const [isPanning, setIsPanning] = useState(false);
+
+  // Apply transform directly to DOM — bypasses React re-renders during panning.
+  const applyView = useCallback((v) => {
+    viewRef.current = v;
+    if (panContainerRef.current) {
+      panContainerRef.current.style.transform = `translate(${v.x}px,${v.y}px) scale(${v.scale})`;
+    }
+  }, []);
+
+  const commitView = useCallback((v) => {
+    applyView(v);
+    setView(v);
+  }, [applyView]);
 
   const fitToView = useCallback(() => {
     const viewport = viewportRef.current?.getBoundingClientRect();
     if (!viewport) return;
-    setView(fitTransform(layout.bounds, viewport));
-  }, [layout.bounds]);
+    commitView(fitTransform(layout.bounds, viewport));
+  }, [layout.bounds, commitView]);
 
   const centerOnActiveNode = useCallback(() => {
     const viewport = viewportRef.current?.getBoundingClientRect();
@@ -217,12 +228,12 @@ const NarrativeBranchView = ({ graph, onJumpToNode, onClose }) => {
     if (!activeNode) { fitToView(); return; }
     const scale = clamp(1.0, MIN_SCALE, MAX_SCALE);
     const { nodeWidth, nodeHeight } = layout.metrics;
-    setView({
+    commitView({
       scale,
       x: viewport.width / 2 - (activeNode.position.x + nodeWidth / 2) * scale,
       y: viewport.height / 2 - (activeNode.position.y + nodeHeight / 2) * scale,
     });
-  }, [layout, graph?.activeNodeId, fitToView]);
+  }, [layout, graph?.activeNodeId, fitToView, commitView]);
 
   // Center on the active node when the map first opens
   useEffect(() => {
@@ -265,36 +276,39 @@ const NarrativeBranchView = ({ graph, onJumpToNode, onClose }) => {
   const zoomBy = useCallback((delta) => {
     const viewport = viewportRef.current?.getBoundingClientRect();
     if (!viewport) return;
-    setView((current) => applyZoomFromPoint(current, current.scale * delta, { x: viewport.width / 2, y: viewport.height / 2 }));
-  }, []);
+    commitView(applyZoomFromPoint(viewRef.current, viewRef.current.scale * delta, { x: viewport.width / 2, y: viewport.height / 2 }));
+  }, [commitView]);
 
   const handleWheel = (event) => {
     event.preventDefault();
     const viewport = viewportRef.current?.getBoundingClientRect();
     if (!viewport) return;
-    setView((current) => applyZoomFromPoint(current, current.scale * (event.deltaY > 0 ? 0.92 : 1.08), { x: event.clientX - viewport.left, y: event.clientY - viewport.top }));
+    commitView(applyZoomFromPoint(viewRef.current, viewRef.current.scale * (event.deltaY > 0 ? 0.92 : 1.08), { x: event.clientX - viewport.left, y: event.clientY - viewport.top }));
   };
 
   const handlePointerDown = (event) => {
     if (event.button !== 0) return;
     if (event.target.closest('[data-map-node]')) return;
     if (event.target.closest('[data-map-control]')) return;
-    if (event.target.closest('[data-edge-label]')) return;
-    panStateRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: view.x, originY: view.y };
+    event.preventDefault(); // stop text selection on fast drag
+    const v = viewRef.current;
+    panStateRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: v.x, originY: v.y };
     setIsPanning(true);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event) => {
     const p = panStateRef.current;
     if (!p || p.pointerId !== event.pointerId) return;
-    setView((current) => ({ ...current, x: p.originX + (event.clientX - p.startX), y: p.originY + (event.clientY - p.startY) }));
+    applyView({ ...viewRef.current, x: p.originX + (event.clientX - p.startX), y: p.originY + (event.clientY - p.startY) });
   };
 
-  const handlePointerUp = (event) => {
-    if (panStateRef.current?.pointerId !== event.pointerId) return;
+  const endPan = (event) => {
+    if (!panStateRef.current || panStateRef.current.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
     panStateRef.current = null;
     setIsPanning(false);
+    setView({ ...viewRef.current });
   };
 
   return (
@@ -331,13 +345,13 @@ const NarrativeBranchView = ({ graph, onJumpToNode, onClose }) => {
           {/* Canvas */}
           <div
             ref={viewportRef}
-            className={`relative flex-1 overflow-hidden transition-[filter] duration-200 ${detailNode ? 'blur-sm' : ''} ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+            className={`relative flex-1 overflow-hidden select-none transition-[filter] duration-200 ${detailNode ? 'blur-sm' : ''} ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+            style={{ touchAction: 'none' }}
             onWheel={handleWheel}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-            onDoubleClick={fitToView}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
           >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.12),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(45,212,191,0.12),transparent_32%)]" />
             <div className="pointer-events-none absolute inset-0 opacity-25"
@@ -347,43 +361,99 @@ const NarrativeBranchView = ({ graph, onJumpToNode, onClose }) => {
               }}
             />
 
-            <div className="absolute left-0 top-0 will-change-transform"
+            <div ref={panContainerRef} className="absolute left-0 top-0 will-change-transform"
               style={{
                 width: layout.bounds.width + VIEW_PADDING * 2,
                 height: layout.bounds.height + VIEW_PADDING * 2,
-                transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+                transform: `translate(${view.x}px,${view.y}px) scale(${view.scale})`,
                 transformOrigin: '0 0'
               }}
             >
-              <svg className="absolute left-0 top-0 overflow-visible"
-                width={layout.bounds.width + VIEW_PADDING * 2}
-                height={layout.bounds.height + VIEW_PADDING * 2}
-                viewBox={`-40 -40 ${layout.bounds.width + VIEW_PADDING * 2} ${layout.bounds.height + VIEW_PADDING * 2}`}
-              >
-                <defs>
-                  <marker id="narrative-map-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-                    <path d="M0,0 L10,5 L0,10 z" fill="#f6d18b" />
-                  </marker>
-                </defs>
+              {/* HTML edge connectors — same coordinate space as node buttons, no SVG offset bugs.
+                  Edges grouped by source: stub + optional trunk for branching, then per-edge branch + pill. */}
+              {Object.entries(
+                layout.edges.reduce((acc, e) => { (acc[e.parentId] = acc[e.parentId] || []).push(e); return acc; }, {})
+              ).map(([parentId, edges]) => {
+                const isSourceActive = activePathIds.has(parentId);
+                const { sourceX, sourceY } = edges[0];
+                const STUB = 20;
+                const elbowX = sourceX + STUB;
+                const isMulti = edges.length > 1;
+                const targetYs = edges.map(e => e.targetY);
+                const minY = Math.min(...targetYs);
+                const maxY = Math.max(...targetYs);
+                const trunkColor = isSourceActive ? 'rgba(246,209,139,0.5)' : 'rgba(125,211,201,0.18)';
+                const LINE = 16; // fixed connector line length on each side of pill
 
-                {layout.edges.map((edge) => {
-                  const isActive = activeEdgeIds.has(edge.id);
-                  return (
-                    <path key={edge.id} d={createEdgePath(edge)} fill="none"
-                      stroke={isActive ? '#f6d18b' : '#7dd3c9'}
-                      strokeOpacity={isActive ? 0.88 : 0.28}
-                      strokeWidth={isActive ? 3.2 : 1.8}
-                      markerEnd="url(#narrative-map-arrow)"
-                    />
-                  );
-                })}
-              </svg>
+                return (
+                  <React.Fragment key={parentId}>
+                    {/* Horizontal stub: source right-center → elbow */}
+                    <div style={{ position: 'absolute', left: sourceX, top: sourceY - 1, width: STUB, height: 2, background: trunkColor, pointerEvents: 'none' }} />
+
+                    {/* Vertical trunk connecting all branches (branching nodes only) */}
+                    {isMulti && (
+                      <div style={{ position: 'absolute', left: elbowX, top: minY, width: 2, height: Math.max(2, maxY - minY), background: trunkColor, pointerEvents: 'none' }} />
+                    )}
+
+                    {edges.map(edge => {
+                      const isActive = activeEdgeIds.has(edge.id);
+                      const lineColor = isActive ? 'rgba(246,209,139,0.62)' : 'rgba(125,211,201,0.18)';
+                      const branchStart = isMulti ? elbowX + 2 : sourceX;
+                      // Pill fills the gap minus LINE px on each side — adapts to any columnGap
+                      const pillWidth = edge.targetX - branchStart - LINE * 2;
+                      const pillLeft = branchStart + LINE;
+
+                      return (
+                        <React.Fragment key={edge.id}>
+                          {/* Left line */}
+                          <div style={{ position: 'absolute', left: branchStart, top: edge.targetY - 1, width: LINE, height: 2, background: lineColor, pointerEvents: 'none' }} />
+
+                          {/* Choice pill — full text, word-wrap, vertically centered via transform */}
+                          <div style={{
+                            position: 'absolute',
+                            left: pillLeft,
+                            top: edge.targetY,
+                            transform: 'translateY(-50%)',
+                            width: pillWidth,
+                            borderRadius: 10,
+                            border: `1px solid ${isActive ? 'rgba(246,209,139,0.38)' : 'rgba(255,255,255,0.09)'}`,
+                            background: isActive ? 'rgba(26,14,8,0.96)' : 'rgba(4,4,8,0.88)',
+                            fontFamily: 'Cardo, Georgia, serif',
+                            fontSize: 10,
+                            lineHeight: 1.55,
+                            color: isActive ? '#fde68a' : 'rgba(148,163,184,0.55)',
+                            textAlign: 'center',
+                            padding: '5px 10px',
+                            wordBreak: 'break-word',
+                            pointerEvents: 'none',
+                          }}>
+                            {edge.choiceText || 'Continue'}
+                          </div>
+
+                          {/* Right line */}
+                          <div style={{ position: 'absolute', left: edge.targetX - LINE, top: edge.targetY - 1, width: LINE, height: 2, background: lineColor, pointerEvents: 'none' }} />
+
+                          {/* Arrowhead: tip = (targetX, targetY). CSS triangle tip is at (left+6, top+5). */}
+                          <div style={{
+                            position: 'absolute',
+                            left: edge.targetX - 6, top: edge.targetY - 5,
+                            width: 0, height: 0,
+                            borderTop: '5px solid transparent',
+                            borderBottom: '5px solid transparent',
+                            borderLeft: `6px solid ${isActive ? 'rgba(246,209,139,0.65)' : 'rgba(125,211,201,0.25)'}`,
+                            pointerEvents: 'none',
+                          }} />
+                        </React.Fragment>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
 
               {layout.nodes.map((node) => {
                 const isCurrent = graph?.activeNodeId === node.id;
                 const isSelected = detailNodeId === node.id;
                 const isOnActivePath = activePathIds.has(node.id);
-                const branchCount = getNarrativeOutgoingEdges(graph, node.id).length;
                 const isDimmed = !isOnActivePath && !isCurrent && !isSelected;
 
                 return (
@@ -407,19 +477,14 @@ const NarrativeBranchView = ({ graph, onJumpToNode, onClose }) => {
                           <p className="font-cardo text-[11px] uppercase tracking-[0.28em] text-white/45">Scene {node.depth}</p>
                           <h3 className="mt-1 font-berkshire text-xl leading-6 text-white">{truncate(node.title || `Scene ${node.depth}`, 34)}</h3>
                         </div>
-                        <div className="flex flex-col items-end gap-1">
-                          {isCurrent && <span className="rounded-full border border-emerald-300/55 bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.22em] text-emerald-100">Current</span>}
-                          {!isCurrent && isOnActivePath && <span className="rounded-full border border-cyan-300/35 bg-cyan-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.22em] text-cyan-100">Active Path</span>}
-                          {branchCount > 1 && <span className="rounded-full border border-amber-300/30 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.22em] text-amber-100">Fork ×{branchCount}</span>}
-                        </div>
+                        {isCurrent && (
+                          <span className="rounded-full border border-emerald-300/55 bg-emerald-500/15 px-2 py-0.5 text-[10px] uppercase tracking-[0.22em] text-emerald-100">Current</span>
+                        )}
                       </div>
                       <p className="font-cardo text-sm leading-6 text-white/70"
                         style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {getNarrativeNodeExcerpt(node)}
                       </p>
-                      {node.choiceFromParent && (
-                        <p className="mt-auto font-cardo text-xs leading-5 text-amber-100/70">From: {truncate(node.choiceFromParent, 56)}</p>
-                      )}
                     </div>
                   </button>
                 );

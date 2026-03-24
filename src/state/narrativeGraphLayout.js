@@ -7,7 +7,7 @@ import {
 const DEFAULT_LAYOUT = {
   nodeWidth: 248,
   nodeHeight: 152,
-  columnGap: 200,
+  columnGap: 240,
   rowGap: 78,
   rootGap: 1
 };
@@ -71,23 +71,31 @@ export function createNarrativeGraphLayout(graph, options = {}) {
     placeNode(rootId);
   });
 
-  const nodes = Object.values(graph?.nodes ?? {}).map((node) => ({
-    ...node,
-    position: positions[node.id] ?? { x: 0, y: 0 }
-  }));
+  // Each node exposes its bounding box so edge routing can use geometry, not magic numbers.
+  const nodes = Object.values(graph?.nodes ?? {}).map((node) => {
+    const pos = positions[node.id] ?? { x: 0, y: 0 };
+    return {
+      ...node,
+      position: pos,
+      bounds: { x: pos.x, y: pos.y, width: nodeWidth, height: nodeHeight }
+    };
+  });
 
+  // Edge endpoints derived purely from node bounding boxes:
+  //   source → right-center of parent node
+  //   target → left-center of child node
   const edges = Object.values(graph?.edges ?? {}).map((edge) => {
     const parent = getNarrativeNode(graph, edge.parentId);
-    const child = getNarrativeNode(graph, edge.childId);
-    const source = positions[edge.parentId] ?? { x: 0, y: 0 };
-    const target = positions[edge.childId] ?? { x: 0, y: 0 };
+    const child  = getNarrativeNode(graph, edge.childId);
+    const src = positions[edge.parentId] ?? { x: 0, y: 0 };
+    const tgt = positions[edge.childId]  ?? { x: 0, y: 0 };
 
     return {
       ...edge,
-      sourceX: source.x + nodeWidth,
-      sourceY: source.y + nodeHeight / 2,
-      targetX: target.x,
-      targetY: target.y + nodeHeight / 2,
+      sourceX: src.x + nodeWidth,       // right edge of source node
+      sourceY: src.y + nodeHeight / 2,  // vertical center of source node
+      targetX: tgt.x,                   // left edge of target node
+      targetY: tgt.y + nodeHeight / 2,  // vertical center of target node
       sourceDepth: parent?.depth ?? 0,
       targetDepth: child?.depth ?? 0
     };
