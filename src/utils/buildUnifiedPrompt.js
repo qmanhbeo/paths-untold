@@ -13,6 +13,7 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
   const {
     summary = [],
     prose = [],
+    sceneLog = [],
     companions = [],
     sceneIndex = 0,
     world = {
@@ -29,9 +30,6 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
   const tension = arc?.tension ?? 3;
   const arcPhase = tension <= 3 ? 'opening' : tension <= 7 ? 'pressure' : 'convergence';
 
-  const latestSummary = summary.at(-1) || '';
-  const latestProse = prose.at(-1) || '';
-
   // Only list ACTIVE companions in the prompt (keeps context focused)
   const activeCompanions = (companions || []).filter(c => (c.status ?? 'active') === 'active');
   const companionString = activeCompanions.length > 0
@@ -42,6 +40,20 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
 
   const phaseOutPromptExtras = injectPhaseOutLogicIntoPrompt(companions, sceneIndex);
   const isFirstScene = prose.length === 0;
+
+  // Structured scene log — replaces raw prose as context.
+  // Shows what concretely happened, what changed, and what was revealed (last 5 scenes).
+  const recentLog = sceneLog.length > 0
+    ? sceneLog.map(r =>
+        [
+          `Scene ${r.sceneIndex} | choice: "${r.playerChoice || '—'}"`,
+          r.event      ? `  happened: ${r.event}` : null,
+          r.stateChange ? `  changed: ${r.stateChange}` : null,
+          r.reveals?.length ? `  revealed: ${r.reveals.join('; ')}` : null,
+          r.resolvedThreads?.length ? `  resolved: ${r.resolvedThreads.join(', ')}` : null,
+        ].filter(Boolean).join('\n')
+      ).join('\n\n')
+    : '(story just started)';
 
   const worldBlock = `
 World:
@@ -65,10 +77,10 @@ World:
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
 
 Open with a vivid, immersive introduction in second person ("you"). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps. Do not invent a name for the player character.`
-    : `Continue the story with strong pacing and emotional nuance.
-Begin naturally by reflecting the player's last choice as dialogue or action.${playerName ? `\nThe protagonist's name is "${playerName}". Use it sparingly — only in NPC dialogue, direct address, or emotionally significant moments. Default narration stays second-person "you".` : ''}`;
+    : `Continue the story. The player chose: "${latestChoice}".
+Advance the plot — reflect the choice as a concrete consequence (dialogue, action, or revelation), not atmosphere.${playerName ? `\nThe protagonist's name is "${playerName}". Use it sparingly — only in NPC dialogue, direct address, or emotionally significant moments. Default narration stays second-person "you".` : ''}`;
 
-  const system = `You are the narrative engine for a branching story game. Write in clear, vivid prose.
+  const system = `You are a state-driven narrative engine for a branching story game. Write in clear, vivid prose.
 
 RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
@@ -84,6 +96,14 @@ RULES:
   Every scene must either raise tension (arcDelta.tension: 1) or clarify the core question. Use arcDelta.tension: -1 only for earned relief after high-stakes moments.
   Use arcDelta.addThreads to introduce new narrative threads (keep total under 5), arcDelta.removeThreads to resolve or drop them.
   On the FIRST scene only (if coreQuestion is empty): set arcDelta.coreQuestion to the central dramatic question of this story — one sentence, framed as "Will you…" or "Can you…" or "What does it mean to…".
+- PROGRESSION RULES — every scene must advance the story or it is filler:
+  1. Introduce at least ONE concrete development: new information revealed, a relationship that shifts, a constraint added, or something that cannot be undone.
+  2. Player choices MUST cause a state change — never offer paths that lead to identical outcomes.
+  3. Do NOT re-describe the same atmosphere, location, or character that hasn't changed since the last scene.
+  4. Do NOT repeat scene structure from recent scenes (pattern to avoid: description → companion mention → vague tension → choice with no consequence).
+  5. At pressure phase: at least one active thread must deepen or shift meaningfully this scene.
+  6. At convergence phase: force a decisive event — no more setup loops or ambiguous holds.
+  7. sceneRecord.stateChange must describe something concrete that is now different. If nothing changed, rule 1 was violated.
 - PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, written as spoken dialogue, not a game instruction). Do NOT trigger this in ordinary scenes or early in the story.
 - Keep character updates compact but useful.
 
@@ -137,6 +157,12 @@ OUTPUT SHAPE (STRICT JSON):
     "addThreads": [],
     "removeThreads": []
   },
+  "sceneRecord": {
+    "event": "one sentence: what concretely happened this scene",
+    "stateChange": "one sentence: what is now different in the world (not atmosphere — a real change)",
+    "reveals": ["new information the player learned"],
+    "resolvedThreads": ["thread names closed this scene"]
+  },
   "choiceDirector": {
     "needed": true,
     "type": "paths | threshold | freetext | none",
@@ -156,14 +182,11 @@ OUTPUT SHAPE (STRICT JSON):
 Companions (active):
 ${companionString}
 
-Summary So Far:
-${latestSummary}
+Scene Log (last ${sceneLog.length || 0} scenes):
+${recentLog}
 
-Last Scene:
-${latestProse}
-
-Player's Latest Choice:
-${latestChoice}
+Player's Choice:
+${latestChoice || '(story begins)'}
 
 ${phaseOutPromptExtras}
 

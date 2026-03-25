@@ -67,9 +67,21 @@
 
 /**
  * @typedef {{
+ *   sceneIndex: number,
+ *   playerChoice: string,
+ *   event: string,
+ *   stateChange: string,
+ *   reveals: string[],
+ *   resolvedThreads: string[]
+ * }} SceneRecord
+ */
+
+/**
+ * @typedef {{
  *   prose: string[],
  *   paths: string[],
  *   summary: string[],
+ *   sceneLog: SceneRecord[],
  *   companions: Companion[],
  *   sceneIndex: number,
  *   world: WorldState,

@@ -159,6 +159,16 @@ function coerceCompanionsDelta(v) {
   }).filter(Boolean);
 }
 
+function coerceSceneRecord(v) {
+  if (!v || typeof v !== 'object') return null;
+  const event = typeof v.event === 'string' ? v.event.trim() : '';
+  const stateChange = typeof v.stateChange === 'string' ? v.stateChange.trim() : '';
+  if (!event && !stateChange) return null;
+  const reveals = Array.isArray(v.reveals) ? v.reveals.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : [];
+  const resolvedThreads = Array.isArray(v.resolvedThreads) ? v.resolvedThreads.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : [];
+  return { event, stateChange, reveals, resolvedThreads };
+}
+
 function coerceChoiceDirector(v) {
   if (!v || typeof v !== 'object') return null;
   const needed = typeof v.needed === 'boolean' ? v.needed : true;
@@ -201,8 +211,9 @@ function normalizeScenePacket(obj, raw) {
   const companionsDelta = coerceCompanionsDelta(obj.companionsDelta);
   const arcDelta = coerceArcDelta(obj.arcDelta);
   const choiceDirector = coerceChoiceDirector(obj.choiceDirector);
+  const sceneRecord = coerceSceneRecord(obj.sceneRecord);
 
-  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta, choiceDirector };
+  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta, choiceDirector, sceneRecord };
 }
 
 // ----------------- Public: central entry point -----------------

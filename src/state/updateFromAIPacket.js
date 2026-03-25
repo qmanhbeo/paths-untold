@@ -21,6 +21,7 @@ function slug(s) {
 function ensureWorldArc(mem) {
   return {
     ...mem,
+    sceneLog: mem?.sceneLog ?? [],
     world: mem?.world ?? {
       clock: { day: 1, time: 'day' },
       location: { name: 'Unknown Place', tags: [] },
@@ -28,7 +29,9 @@ function ensureWorldArc(mem) {
       objectives: [],
       flags: {},
     },
-    arc: mem?.arc ?? { chapter: 1, beat: 0, tension: 3 },
+    arc: mem?.arc
+      ? { coreQuestion: '', activeThreads: [], ...mem.arc }
+      : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [] },
   };
 }
 
@@ -144,11 +147,29 @@ export function updateFromAIPacket(memory, packet, playerChoiceText = '') {
   const withLifecycle = assignPurposeIfNeeded(mergedCompanions, sceneIdx);
   const lifecycleUpdated = updatePhaseOutCountdowns(withLifecycle, sceneIdx);
 
-  // 6) Final result
+  // 6) Append structured scene record to rolling log (keep last 5)
+  const record = packet?.sceneRecord;
+  const newEntry = record
+    ? {
+        sceneIndex: sceneIdx,
+        playerChoice: playerChoiceText || '',
+        event: record.event || '',
+        stateChange: record.stateChange || '',
+        reveals: record.reveals || [],
+        resolvedThreads: record.resolvedThreads || [],
+      }
+    : null;
+  const sceneLog = [
+    ...(afterNarrative.sceneLog || []),
+    ...(newEntry ? [newEntry] : []),
+  ].slice(-5);
+
+  // 7) Final result
   return {
     ...afterNarrative,
     companions: lifecycleUpdated,
     sceneIndex: sceneIdx,
+    sceneLog,
   };
 }
 

@@ -44,6 +44,7 @@ export function migrateMemory(raw) {
       prose,
       paths,
       summary: raw?.summary || [],
+      sceneLog: Array.isArray(raw?.sceneLog) ? raw.sceneLog : [],
       companions: (raw?.companions || []).map(c => ({
         id: c.id || slug(c.name || "npc"),
         name: c.name || "Unknown",
