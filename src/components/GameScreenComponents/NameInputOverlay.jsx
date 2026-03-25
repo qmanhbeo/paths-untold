@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const NameInputOverlay = ({ onSubmit }) => {
+const NameInputOverlay = ({ onSubmit, promptText }) => {
   const [value, setValue] = useState('');
 
   const submit = () => {
@@ -10,10 +10,12 @@ const NameInputOverlay = ({ onSubmit }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="font-cardo w-full sm:max-w-sm mx-0 sm:mx-4 px-6 py-8 sm:rounded-lg border-t sm:border border-white/15 bg-black/90 text-white animate-fade-in">
-        <p className="text-xs text-white/40 tracking-widest uppercase mb-4 text-center">
-          you answer…
-        </p>
+      <div className="font-cardo w-full sm:max-w-sm mx-0 sm:mx-4 px-6 py-8 sm:rounded-lg border-t sm:border border-white/15 bg-black/95 text-white animate-fade-in">
+        {promptText && (
+          <p className="text-white/70 italic text-sm leading-relaxed mb-6 text-center">
+            {promptText}
+          </p>
+        )}
         <input
           autoFocus
           type="text"
