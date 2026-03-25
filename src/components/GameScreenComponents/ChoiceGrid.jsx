@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 
-// phase: 'idle' → 'chosen' (selected glows, others fade) → 'loading' (magical text) → 'idle'
-const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
+// Determines the grid class based on choice count
+function gridClass(count) {
+  if (count === 1) return 'grid-cols-1';
+  if (count === 3) return 'grid-cols-2';
+  return 'grid-cols-2'; // 2 or 4
+}
+
+// phase: 'idle' → 'chosen' (selected glows, others fade) → 'loading' → 'idle'
+const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [phase, setPhase] = useState('idle');
   const timerRef = useRef(null);
@@ -14,30 +21,25 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
     onChoice(choice, index);
   };
 
+  const handleContinue = () => {
+    if (disabled) return;
+    setPhase('loading');
+    onContinue?.();
+  };
+
   // When new choices arrive (scene loaded), reset to idle
   useEffect(() => {
-    if (!disabled && choices.length > 0) {
+    if (!disabled) {
       if (timerRef.current) clearTimeout(timerRef.current);
       setPhase('idle');
       setSelectedIndex(null);
     }
   }, [choices, disabled]);
 
-  // No choices yet (initial generation)
-  if (choices.length === 0) {
-    return (
-      <div className="font-cardo min-h-[160px] flex items-center justify-center">
-        <p className="text-white/40 mix-blend-difference italic animate-pulse-slow text-sm tracking-wide">
-          Preparing your next decisions…
-        </p>
-      </div>
-    );
-  }
-
-  // Loading phase — choices dissolved, waiting for next scene
+  // Loading phase — waiting for next scene
   if (phase === 'loading') {
     return (
-      <div className="font-cardo min-h-[160px] flex flex-col items-center justify-center gap-3">
+      <div className="font-cardo min-h-[80px] flex flex-col items-center justify-center gap-3">
         <p className="text-amber-100/40 italic tracking-[0.25em] animate-pulse-slow text-sm">
           ✦ &nbsp; The paths align… &nbsp; ✦
         </p>
@@ -45,12 +47,39 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
     );
   }
 
-  // Idle or chosen — show buttons
+  // Still generating (initial scene load)
+  if (choices.length === 0 && !onContinue) {
+    return (
+      <div className="font-cardo min-h-[80px] flex items-center justify-center">
+        <p className="text-white/40 italic animate-pulse-slow text-sm tracking-wide">
+          Preparing your next decisions…
+        </p>
+      </div>
+    );
+  }
+
+  // No choices — show a Continue button
+  if (choices.length === 0 && onContinue) {
+    return (
+      <div className="font-cardo flex justify-center animate-blur-in">
+        <button
+          disabled={disabled}
+          onClick={handleContinue}
+          className="border border-white/20 rounded-lg px-10 py-3 text-sm text-white/60 hover:border-amber-200/40 hover:text-white/80 transition-all duration-300 tracking-widest uppercase disabled:opacity-20"
+        >
+          Continue
+        </button>
+      </div>
+    );
+  }
+
+  // Idle or chosen — show choice buttons
   return (
-    <div className="font-cardo grid grid-cols-2 gap-2 sm:gap-4 animate-blur-in">
+    <div className={`font-cardo grid ${gridClass(choices.length)} gap-2 sm:gap-4 animate-blur-in`}>
       {choices.map((choice, index) => {
         const isSelected = index === selectedIndex;
         const isChosen = phase === 'chosen';
+        const isLastOdd = choices.length === 3 && index === 2;
 
         let stateClasses = '';
         if (isChosen && isSelected) {
@@ -66,7 +95,7 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
             key={index}
             disabled={disabled}
             onClick={() => handleClick(choice, index)}
-            className={`border rounded-lg p-3 sm:p-5 flex items-center justify-center text-center min-h-[80px] sm:min-h-[100px] text-sm transition-all duration-500 cursor-pointer ${stateClasses}`}
+            className={`border rounded-lg p-3 sm:p-5 flex items-center justify-center text-center min-h-[80px] sm:min-h-[100px] text-sm transition-all duration-500 cursor-pointer ${isLastOdd ? 'col-span-2' : ''} ${stateClasses}`}
           >
             {choice}
           </button>

@@ -518,6 +518,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           <ChoiceGrid
             choices={displayedPaths}
             onChoice={handleChoiceClick}
+            onContinue={!isLoading && displayedPaths.length === 0 ? () => handleChoiceClick('') : undefined}
             disabled={isLoading}
           />
         </div>

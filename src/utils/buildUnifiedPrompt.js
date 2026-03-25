@@ -68,7 +68,8 @@ RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
 - Scene length: ~200–350 words.
 - SECOND PERSON ONLY. The protagonist is the player. Always narrate in second person ("you step", "you notice", "you feel") — never assign a proper name to the protagonist, never use third-person ("he", "she", "they", or any named character) for the player character. Other NPCs may have names. The player is always "you".
-- Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a direct second-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All 4 paths must feel like the 4 most natural next moves from where the prose ends.
+- Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a direct second-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All paths must feel like the most natural next moves from where the prose ends.
+- CHOICE DIRECTOR: Before writing paths, honestly evaluate whether this scene warrants a player choice at all. A choice is only justified if it reveals character, changes a relationship, commits to irreversible risk, presses the core theme, or creates genuine consequence. Set choiceDirector.needed=false and return paths=[] when the scene's purpose is establishing atmosphere, delivering consequence, or transitioning — these do not need a fork. When a choice IS warranted, use the minimum count that expresses the real tension (prefer 2–3 over always 4). Never manufacture options just to fill a grid.
 - PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, written as spoken dialogue, not a game instruction). Do NOT trigger this in ordinary scenes or early in the story.
 - Keep character updates compact but useful.
 
@@ -115,6 +116,12 @@ OUTPUT SHAPE (STRICT JSON):
     }
   ],
   "arcDelta": { "tension": 0, "beat": 0, "chapter": 0 },
+  "choiceDirector": {
+    "needed": true,
+    "type": "value | action | relational | threshold | none",
+    "tension": "one sentence: what is under pressure in this moment",
+    "count": 4
+  },
   "identityRequirement": {
     "required": false,
     "reason": "signature | introduction | accusation | vow | record | recognition | emotional | other",

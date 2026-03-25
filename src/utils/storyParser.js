@@ -159,6 +159,16 @@ function coerceCompanionsDelta(v) {
   }).filter(Boolean);
 }
 
+function coerceChoiceDirector(v) {
+  if (!v || typeof v !== 'object') return null;
+  const needed = typeof v.needed === 'boolean' ? v.needed : true;
+  const validTypes = ['value', 'action', 'relational', 'threshold', 'none'];
+  const type = validTypes.includes(v.type) ? v.type : 'action';
+  const tension = typeof v.tension === 'string' ? v.tension : '';
+  const count = Number.isInteger(v.count) && v.count >= 0 && v.count <= 4 ? v.count : null;
+  return { needed, type, tension, count };
+}
+
 function coerceArcDelta(v) {
   if (!v || typeof v !== 'object') return null;
   const t = Number.isInteger(v.tension) && [-1,0,1].includes(v.tension) ? v.tension : undefined;
@@ -186,8 +196,9 @@ function normalizeScenePacket(obj, raw) {
   const locationDelta = coerceLocationDelta(obj.locationDelta);
   const companionsDelta = coerceCompanionsDelta(obj.companionsDelta);
   const arcDelta = coerceArcDelta(obj.arcDelta);
+  const choiceDirector = coerceChoiceDirector(obj.choiceDirector);
 
-  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta };
+  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta, choiceDirector };
 }
 
 // ----------------- Public: central entry point -----------------
