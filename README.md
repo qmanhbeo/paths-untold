@@ -68,7 +68,8 @@ Interaction is treated as **sequential control**, not simple input.
 From the player’s perspective, Paths Untold is a quiet, choice-driven story game:
 
 * Each scene presents a short narrative moment
-* Four unique choices invite reflection rather than optimization
+* Choices appear only when the story earns them — and only in the form that fits (pick from options, a binary commitment, your own words, or none)
+* Choice labels are short and decisive — the scene is poetic; the choice is a verb
 * Characters remember what you do and how you treat them
 * Emotional tone shifts subtly over time
 
@@ -81,6 +82,9 @@ There are no timers, no scores, and no “correct” paths — only unfolding co
 * **Dynamic scene-by-scene storytelling** powered by LLMs
 * **Persistent character memory** (traits, relationships, emotional states)
 * **Long-horizon coherence** via scene summaries and state compression
+* **Choice Director** — choices are conditional: scenes can produce paths, a binary threshold, free-text input, or no choice at all, depending on what the narrative moment earns
+* **Decisive choice text** — choice labels are short, direct, and immediate (2–8 words); the scene carries the atmosphere, the choice carries the decision
+* **Deferred identity** — the player's name is only requested when the story genuinely earns it (signing a document, a formal introduction, a deepening relationship)
 * **Discrete action space** for meaningful player intervention
 * **Save / Load system** with multiple slots
 * **Frontend + backend in one command**
@@ -212,6 +216,8 @@ Planned improvements include:
 * Stronger schema guarantees and recovery logic
 * Expanded character lifecycle and relationship modeling
 * Instrumentation for failure-mode analysis
+
+See [`narrative-study/`](narrative-study/) for design notes and session change logs.
 
 ---
 
