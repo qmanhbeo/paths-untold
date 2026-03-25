@@ -358,7 +358,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
   return (
     <div
-      className="relative flex h-screen flex-row bg-cover bg-center bg-no-repeat"
+      className="relative flex h-screen flex-row overflow-hidden bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${backgroundImage})` }}
     >
       {showCharacterPanel && (
@@ -391,7 +391,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         />
       )}
 
-      <div className={`flex flex-grow flex-col p-10 pt-10 animate-fade-in-slow transition-[filter] duration-300 ${showCharacterPanel || showQuestPanel || showItemsPanel || showNarrativeMap ? 'blur-sm' : 'blur-none'}`}>
+      <div className={`flex flex-grow flex-col p-4 sm:p-10 animate-fade-in-slow transition-[filter] duration-300 overflow-hidden ${showCharacterPanel || showQuestPanel || showItemsPanel || showNarrativeMap ? 'blur-sm' : 'blur-none'}`}>
         <h1
           className={`mb-4 font-berkshire text-2xl font-bold text-white transition-opacity duration-1000 ${
             fadeInTitle ? 'opacity-100' : 'opacity-0'
@@ -402,47 +402,44 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
         <HeaderBar mem={gameMemory} />
 
-        <div className="mb-2 flex items-center justify-between gap-2 animate-fade-in-slow">
-          <div className="flex items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 animate-fade-in-slow">
+          <button
+            onClick={() => setShowNarrativeMap(true)}
+            className="font-cardo rounded border border-cyan-300/60 px-2 py-1 text-xs sm:text-sm text-white/90 hover:bg-cyan-900/40 transition-colors"
+          >
+            Narrative Map
+          </button>
+          <button
+            onClick={() => setShowQuestPanel(!showQuestPanel)}
+            className="font-cardo rounded border border-amber-300/40 px-2 py-1 text-xs sm:text-sm text-white/70 hover:bg-amber-900/30 transition-colors"
+          >
+            Quests
+          </button>
+          <button
+            onClick={() => setShowItemsPanel(!showItemsPanel)}
+            className="font-cardo rounded border border-white/20 px-2 py-1 text-xs sm:text-sm text-white/60 hover:bg-white/10 transition-colors"
+          >
+            Items
+          </button>
+          {(gameMemory.companions?.length ?? 0) > 0 && (
             <button
-              onClick={() => setShowNarrativeMap(true)}
-              className="font-cardo rounded border border-cyan-300/60 px-3 py-1 text-sm text-white/90 hover:bg-cyan-900/40 transition-colors"
+              onClick={() => setShowCharacterPanel(!showCharacterPanel)}
+              className="font-cardo rounded border border-white/25 px-2 py-1 text-xs sm:text-sm text-white/70 hover:bg-white/10 transition-colors"
             >
-              Narrative Map
+              Characters
             </button>
-            <button
-              onClick={() => setShowQuestPanel(!showQuestPanel)}
-              className="font-cardo rounded border border-amber-300/40 px-3 py-1 text-sm text-white/70 hover:bg-amber-900/30 transition-colors"
-            >
-              Quests
-            </button>
-            <button
-              onClick={() => setShowItemsPanel(!showItemsPanel)}
-              className="font-cardo rounded border border-white/20 px-3 py-1 text-sm text-white/60 hover:bg-white/10 transition-colors"
-            >
-              Items
-            </button>
-            {(gameMemory.companions?.length ?? 0) > 0 && (
-              <button
-                onClick={() => setShowCharacterPanel(!showCharacterPanel)}
-                className="font-cardo rounded border border-white/25 px-3 py-1 text-sm text-white/70 hover:bg-white/10 transition-colors"
-              >
-                Characters
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
+          )}
+          <div className="ml-auto flex items-center gap-2">
             <button
               disabled={isLoading}
               onClick={handleSave}
-              className="font-cardo rounded border border-yellow-300/50 px-3 py-1 text-sm text-white/80 hover:bg-yellow-800/40 disabled:opacity-30 transition-colors"
+              className="font-cardo rounded border border-yellow-300/50 px-2 py-1 text-xs sm:text-sm text-white/80 hover:bg-yellow-800/40 disabled:opacity-30 transition-colors"
             >
               Save
             </button>
             <button
               onClick={onBackToMenu}
-              className="font-cardo rounded border border-white/15 px-3 py-1 text-xs text-white/40 hover:text-white/70 hover:border-white/30 transition-colors"
+              className="font-cardo rounded border border-white/15 px-2 py-1 text-xs text-white/40 hover:text-white/70 hover:border-white/30 transition-colors"
             >
               ← Menu
             </button>

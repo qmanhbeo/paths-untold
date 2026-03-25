@@ -26,7 +26,7 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
   // No choices yet (initial generation)
   if (choices.length === 0) {
     return (
-      <div className="font-cardo h-[220px] flex items-center justify-center">
+      <div className="font-cardo min-h-[160px] flex items-center justify-center">
         <p className="text-white/40 mix-blend-difference italic animate-pulse-slow text-sm tracking-wide">
           Preparing your next decisions…
         </p>
@@ -37,7 +37,7 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
   // Loading phase — choices dissolved, waiting for next scene
   if (phase === 'loading') {
     return (
-      <div className="font-cardo h-[220px] flex flex-col items-center justify-center gap-3">
+      <div className="font-cardo min-h-[160px] flex flex-col items-center justify-center gap-3">
         <p className="text-amber-100/40 italic tracking-[0.25em] animate-pulse-slow text-sm">
           ✦ &nbsp; The paths align… &nbsp; ✦
         </p>
@@ -47,7 +47,7 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
 
   // Idle or chosen — show buttons
   return (
-    <div className="font-cardo grid grid-cols-2 gap-4 h-[220px] animate-blur-in">
+    <div className="font-cardo grid grid-cols-2 gap-2 sm:gap-4 animate-blur-in">
       {choices.map((choice, index) => {
         const isSelected = index === selectedIndex;
         const isChosen = phase === 'chosen';
@@ -66,7 +66,7 @@ const ChoiceGrid = ({ choices, onChoice, disabled = false }) => {
             key={index}
             disabled={disabled}
             onClick={() => handleClick(choice, index)}
-            className={`border rounded-lg p-6 flex items-center justify-center text-center h-[100px] transition-all duration-500 cursor-pointer ${stateClasses}`}
+            className={`border rounded-lg p-3 sm:p-5 flex items-center justify-center text-center min-h-[80px] sm:min-h-[100px] text-sm transition-all duration-500 cursor-pointer ${stateClasses}`}
           >
             {choice}
           </button>
