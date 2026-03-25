@@ -58,7 +58,7 @@ World:
 - Tone: ${playerIntro?.selectedTone?.join(', ') || 'unspecified'}
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
 
-Open with a vivid, immersive introduction in second person ("you"). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps. Do not invent a name for the player character. At the close of the scene, have a character or the world itself ask for the player's name in a natural, in-fiction way — woven into the narrative, never as a game prompt.`
+Open with a vivid, immersive introduction in second person ("you"). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps. Do not invent a name for the player character.`
     : `Continue the story with strong pacing and emotional nuance.
 Begin naturally by reflecting the player's last choice as dialogue or action.${playerName ? `\nThe protagonist's name is "${playerName}". Use it sparingly — only in NPC dialogue, direct address, or emotionally significant moments. Default narration stays second-person "you".` : ''}`;
 
@@ -69,6 +69,7 @@ RULES:
 - Scene length: ~200–350 words.
 - SECOND PERSON ONLY. The protagonist is the player. Always narrate in second person ("you step", "you notice", "you feel") — never assign a proper name to the protagonist, never use third-person ("he", "she", "they", or any named character) for the player character. Other NPCs may have names. The player is always "you".
 - Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a direct second-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All 4 paths must feel like the 4 most natural next moves from where the prose ends.
+- PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, written as spoken dialogue, not a game instruction). Do NOT trigger this in ordinary scenes or early in the story.
 - Keep character updates compact but useful.
 
 OUTPUT SHAPE (STRICT JSON):
@@ -113,7 +114,12 @@ OUTPUT SHAPE (STRICT JSON):
       "status": "active"
     }
   ],
-  "arcDelta": { "tension": 0, "beat": 0, "chapter": 0 }
+  "arcDelta": { "tension": 0, "beat": 0, "chapter": 0 },
+  "identityRequirement": {
+    "required": false,
+    "reason": "signature | introduction | accusation | vow | record | recognition | emotional | other",
+    "promptText": "the NPC's exact spoken words creating the name moment — empty string if required is false"
+  }
 }`.trim();
 
   const user = `${worldBlock}

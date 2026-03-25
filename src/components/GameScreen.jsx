@@ -75,10 +75,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [stickToBottom, setStickToBottom] = useState(true);
   const [playerName, setPlayerName] = useState(storyOptions?.playerName || '');
   const [showNameInput, setShowNameInput] = useState(false);
+  const [namePromptText, setNamePromptText] = useState('');
 
   const storyBoxRef = useRef(null);
   const sceneGenerated = useRef(false);
-  const nameInputShown = useRef(Boolean(storyOptions?.playerName));
   const playerNameRef = useRef(storyOptions?.playerName || '');
 
   const [gameMemory, setGameMemory] = useState(() => {
@@ -191,14 +191,6 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Show name input overlay after the first scene finishes loading
-  useEffect(() => {
-    if (segments.length > 0 && !isLoading && !nameInputShown.current) {
-      nameInputShown.current = true;
-      setShowNameInput(true);
-    }
-  }, [segments.length, isLoading]);
-
   useEffect(() => {
     const el = storyBoxRef.current;
     if (!el) return;
@@ -252,6 +244,12 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       const nextGraph = insertNarrativeNode(currentGraph, newNode);
 
       restoreNode(nextGraph, newNode.id, { animateNodeId: newNode.id });
+
+      // Deferred identity: show name input only when the story earns it
+      if (!playerNameRef.current && obj.identityRequirement?.required === true) {
+        setNamePromptText(obj.identityRequirement.promptText || '');
+        setShowNameInput(true);
+      }
 
       return {
         prose: obj.prose,
@@ -540,6 +538,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
       {showNameInput && (
         <NameInputOverlay
+          promptText={namePromptText}
           onSubmit={(name) => {
             setPlayerName(name);
             playerNameRef.current = name;
