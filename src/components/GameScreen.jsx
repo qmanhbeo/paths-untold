@@ -23,7 +23,7 @@ import CharacterLog from './characterLog';
 import QuestLog from './QuestLog';
 import ItemsPanel from './ItemsPanel';
 import NarrativeBranchView from './NarrativeBranchView';
-import { HeaderBar, ChoiceGrid, NameInputOverlay } from './GameScreenComponents';
+import { HeaderBar, ChoiceGrid, NameInputOverlay, FreeTextInput } from './GameScreenComponents';
 
 import './styles.css';
 import backgroundImage from '../images/background-black.jpg';
@@ -63,6 +63,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [fadeInTitle, setFadeInTitle] = useState(true);
   const [segments, setSegments] = useState([]);
   const [displayedPaths, setDisplayedPaths] = useState([]);
+  const [displayedChoiceDirector, setDisplayedChoiceDirector] = useState(null);
   const [rawOutput, setRawOutput] = useState('');
   const [showCharacterPanel, setShowCharacterPanel] = useState(false);
   const [showQuestPanel, setShowQuestPanel] = useState(false);
@@ -133,6 +134,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setFadeInTitle(true);
     setRawOutput(node.rawOutput || '');
     setDisplayedPaths(node.paths || []);
+    setDisplayedChoiceDirector(node.choiceDirector ?? null);
     setSegments(
       buildSceneSegments(nextGraph, nodeId, options.animateNodeId ?? null)
     );
@@ -515,11 +517,20 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         </div>
 
         <div className="flex-shrink-0 animate-fade-in-slow">
-          <ChoiceGrid
-            choices={displayedPaths}
-            onChoice={handleChoiceClick}
-            disabled={isLoading}
-          />
+          {!isLoading && displayedChoiceDirector?.type === 'freetext' ? (
+            <FreeTextInput
+              prompt={displayedChoiceDirector.prompt}
+              onSubmit={(text) => handleChoiceClick(text, null)}
+            />
+          ) : (
+            <ChoiceGrid
+              choices={displayedPaths}
+              onChoice={handleChoiceClick}
+              onContinue={!isLoading && displayedPaths.length === 0 ? () => handleChoiceClick('') : undefined}
+              disabled={isLoading}
+              variant={displayedChoiceDirector?.type === 'threshold' ? 'threshold' : 'default'}
+            />
+          )}
         </div>
       </div>
 

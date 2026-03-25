@@ -135,6 +135,7 @@ function createBaseNode(rawNode = {}) {
         ? rawNode.excerpt
         : truncateText(prose.replace(/\s+/g, ' ').trim(), 150),
     paths: normalizePaths(rawNode.paths ?? rawNode.choices),
+    choiceDirector: rawNode.choiceDirector ?? null,
     packet: cloneJson(rawNode.packet ?? {}),
     memorySnapshot: createMemorySnapshot(rawNode.memorySnapshot),
     childEdgeIds: Array.isArray(rawNode.childEdgeIds) ? rawNode.childEdgeIds : [],
@@ -316,6 +317,7 @@ export function createNarrativeNode(
     proseHtml: typeof proseHtml === 'string' ? proseHtml : escapeHtml(prose),
     summary: typeof packet?.summary === 'string' ? packet.summary : '',
     paths: normalizePaths(packet?.paths ?? packet?.choices),
+    choiceDirector: cloneJson(packet?.choiceDirector ?? null),
     packet: cloneJson(packet ?? {}),
     memorySnapshot: createMemorySnapshot(memorySnapshot),
     childEdgeIds: [],
