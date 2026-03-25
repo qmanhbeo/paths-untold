@@ -11,7 +11,6 @@ import { injectPhaseOutLogicIntoPrompt } from './phaseOutManager';
  */
 export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) => {
   const {
-    summary = [],
     prose = [],
     sceneLog = [],
     companions = [],
@@ -23,12 +22,24 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
       objectives: [],
       flags: {}
     },
-    arc = { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [] }
+    arc = { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], chapterPlan: null }
   } = gameMemory;
 
-  // Derive narrative phase from tension (0–10 scale)
+  // 5-mode tension derived from numeric tension (0–10)
   const tension = arc?.tension ?? 3;
-  const arcPhase = tension <= 3 ? 'opening' : tension <= 7 ? 'pressure' : 'convergence';
+  const tensionMode =
+    tension <= 2 ? 'quiet'
+    : tension <= 4 ? 'unease'
+    : tension <= 6 ? 'pressure'
+    : tension <= 8 ? 'breaking_point'
+    : 'catastrophe';
+
+  // Chapter plan context
+  const plan = arc?.chapterPlan ?? null;
+  const currentArc = plan ? plan.arcs[plan.currentArcIndex ?? 0] : null;
+  const remainingBeats = currentArc
+    ? currentArc.requiredBeats.filter(b => !(plan.completedBeats ?? []).includes(b))
+    : [];
 
   // Only list ACTIVE companions in the prompt (keeps context focused)
   const activeCompanions = (companions || []).filter(c => (c.status ?? 'active') === 'active');
@@ -41,13 +52,12 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
   const phaseOutPromptExtras = injectPhaseOutLogicIntoPrompt(companions, sceneIndex);
   const isFirstScene = prose.length === 0;
 
-  // Structured scene log — replaces raw prose as context.
-  // Shows what concretely happened, what changed, and what was revealed (last 5 scenes).
+  // Structured scene log replaces raw prose. Causal record of what actually happened.
   const recentLog = sceneLog.length > 0
     ? sceneLog.map(r =>
         [
           `Scene ${r.sceneIndex} | choice: "${r.playerChoice || '—'}"`,
-          r.event      ? `  happened: ${r.event}` : null,
+          r.event       ? `  happened: ${r.event}` : null,
           r.stateChange ? `  changed: ${r.stateChange}` : null,
           r.reveals?.length ? `  revealed: ${r.reveals.join('; ')}` : null,
           r.resolvedThreads?.length ? `  resolved: ${r.resolvedThreads.join(', ')}` : null,
@@ -61,9 +71,16 @@ World:
 - Time: Day ${world?.clock?.day ?? 1}, ${world?.clock?.time ?? 'day'}
 - SceneTags: ${(world?.sceneTags || []).join(', ') || '—'}
 - Objectives: ${(world?.objectives || []).map(o => `${o.status === 'active' ? '[•]' : '[ ]'} ${o.text}`).join(' | ') || '—'}
-- Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Phase: ${arcPhase}
-- Core Question: ${arc?.coreQuestion || '(not yet established — set via arcDelta.coreQuestion on the first scene)'}
+- Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Mode: ${tensionMode}
+- Core Question: ${arc?.coreQuestion || '(not yet established — set via arcDelta.coreQuestion on first scene)'}
 - Active Threads: ${(arc?.activeThreads || []).join(' | ') || '(none yet)'}
+${plan ? `
+Chapter Plan:
+- Theme: ${plan.chapterTheme || '—'}
+- Current Arc Goal: ${currentArc?.arcGoal || '—'}
+- Arc Lesson: ${currentArc?.lesson || '—'}
+- Required Beats Remaining: ${remainingBeats.join(' | ') || '(all complete — resolve arc or advance)'}
+- Resolution Condition: ${currentArc?.resolutionCondition || '—'}`.trim() : '- Chapter Plan: (being established)'}
 `.trim();
 
   const playerName = playerIntro?.playerName || '';
@@ -86,32 +103,40 @@ RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
 - Scene length: ~200–350 words.
 - SECOND PERSON ONLY. The protagonist is the player. Always narrate in second person ("you step", "you notice", "you feel") — never assign a proper name to the protagonist, never use third-person ("he", "she", "they", or any named character) for the player character. Other NPCs may have names. The player is always "you".
-- CHOICE TEXT LAW — The scene may be poetic. The choice must be decisive. Write paths as immediate actions, stances, or value expressions — not as mini-scene summaries or atmospheric blurbs. Target 2–8 words; 12 at most. Strong verbs preferred. Do not include decorative prose, predicted consequences, or atmospheric padding — the scene body already carries that weight; choice text carries decision clarity only. Preserve distinctiveness between options by varying action/value/risk, not by adding more words. Good: "Ask what she remembers" / "Touch the edge" / "Wait for a sign" / "Tell her the truth" / "Walk away". Bad: "Turn toward the baker and invite them to read a memory aloud, inviting soft candor to mingle with lilac and bread scent."
-- Paths MUST be rooted in the specific people, objects, and moments from the closing line of the prose. Never invent new locations or characters — only reference what already exists in the scene. Never describe an outcome or spoil a consequence.
-- CHOICE DIRECTOR: Before writing paths, evaluate whether this scene warrants player input at all, and what form it should take. Types: "paths" = the player picks from concrete options (1–4, prefer 2–3 over 4); "threshold" = a binary fork between two mutually exclusive stances — use when the moment demands a commitment (stay/leave, confess/deny, accept/refuse); "freetext" = the player speaks in their own words — use when they are answering a direct question, confessing something, writing a message, or expressing themselves to another character (set choiceDirector.prompt to the in-world question/invitation, leave paths=[]); "none" = no input needed — use for atmosphere, consequence, and transition scenes. Set choiceDirector.needed=false for "none". Never manufacture options just to fill a grid.
-- ARC PHASE: The story is currently in the "${arcPhase}" phase. Shape this scene accordingly:
-  opening (tension 0–3): establish tone, introduce threads, keep stakes low and curiosity high. Choices should feel exploratory (2–4 paths). Tension should gently rise or hold.
-  pressure (tension 4–7): escalate conflict, complicate relationships, force trade-offs. Choices should feel value-driven or binary (2–3 paths or threshold). At least one active thread should deepen.
-  convergence (tension 8–10): move toward resolution or revelation. Reduce branching, increase inevitability. Choices should feel decisive and weighty (1–2 paths, threshold, or none). Threads should resolve.
-  Every scene must either raise tension (arcDelta.tension: 1) or clarify the core question. Use arcDelta.tension: -1 only for earned relief after high-stakes moments.
-  Use arcDelta.addThreads to introduce new narrative threads (keep total under 5), arcDelta.removeThreads to resolve or drop them.
-  On the FIRST scene only (if coreQuestion is empty): set arcDelta.coreQuestion to the central dramatic question of this story — one sentence, framed as "Will you…" or "Can you…" or "What does it mean to…".
+- CHOICE TEXT LAW — The scene may be poetic. The choice must be decisive. Write paths as immediate actions, stances, or value expressions — not as mini-scene summaries or atmospheric blurbs. Target 2–8 words; 12 at most. Strong verbs preferred. Do not include decorative prose, predicted consequences, or atmospheric padding. Preserve distinctiveness by varying action/value/risk, not by adding words. Good: "Ask what she remembers" / "Touch the edge" / "Wait for a sign" / "Walk away". Bad: "Turn toward the baker and invite them to read a memory aloud, inviting soft candor to mingle with lilac and bread scent."
+- Paths MUST be rooted in the specific people, objects, and moments from the closing line of the prose. Never invent new locations or characters. Never describe an outcome or spoil a consequence.
+- CHOICE DIRECTOR: Before writing paths, evaluate whether this scene warrants player input at all. Types: "paths" = concrete options (1–4, prefer 2–3); "threshold" = binary commitment (stay/leave, confess/deny, accept/refuse); "freetext" = player speaks in their own words — for answering a direct question, confessing, writing a message (set choiceDirector.prompt to the in-world question, leave paths=[]); "none" = no input needed — atmosphere, consequence, transition. Set choiceDirector.needed=false for "none". Never manufacture options just to fill a grid.
+- TENSION MODE: This scene is in "${tensionMode}" mode. Shape the scene accordingly:
+  quiet: establish world and tone, introduce one thread gently. Conflict minimal. Something is noticed but not confronted.
+  unease: introduce friction or wrongness. No explosion — the feeling that something is off. One thing becomes uncertain.
+  pressure: escalate. Force a trade-off, reveal something unwelcome, or complicate a relationship. The player must respond to something real.
+  breaking_point: irreversible. This scene demands a major decision or commitment. The player cannot stay neutral. Choices: threshold or 1–2 weighted paths.
+  catastrophe: maximum consequence. Something fails, collapses, or is lost. The story will not recover easily from this. Choices: none or threshold only.
+  - Tension direction: raise (+1) at quiet/unease/pressure; hold (0) or raise at breaking_point; drop (-1) only for earned relief after catastrophe.
+- ARC DIRECTION:${currentArc ? `
+  Goal: ${currentArc.arcGoal}
+  Lesson: ${currentArc.lesson}
+  Beats remaining: ${remainingBeats.join(', ') || 'none — move toward resolution'}
+  This scene must advance one remaining beat OR bring the arc toward its resolution condition.
+  If a required beat occurs, name it exactly in arcDelta.completedBeat.
+  If the resolution condition is met, set arcDelta.advanceArc: true.` : `
+  No chapter plan yet. On the first scene: set arcDelta.coreQuestion to the central dramatic question of this story ("Will you…" / "Can you…" / "What does it mean to…"). Introduce one or two narrative threads via arcDelta.addThreads.`}
 - PROGRESSION RULES — every scene must advance the story or it is filler:
-  1. Introduce at least ONE concrete development: new information revealed, a relationship that shifts, a constraint added, or something that cannot be undone.
-  2. Player choices MUST cause a state change — never offer paths that lead to identical outcomes.
-  3. Do NOT re-describe the same atmosphere, location, or character that hasn't changed since the last scene.
-  4. Do NOT repeat scene structure from recent scenes (pattern to avoid: description → companion mention → vague tension → choice with no consequence).
-  5. At pressure phase: at least one active thread must deepen or shift meaningfully this scene.
-  6. At convergence phase: force a decisive event — no more setup loops or ambiguous holds.
-  7. sceneRecord.stateChange must describe something concrete that is now different. If nothing changed, rule 1 was violated.
-- PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, written as spoken dialogue, not a game instruction). Do NOT trigger this in ordinary scenes or early in the story.
+  1. Introduce at least ONE concrete development: new information, a relationship that shifts, a constraint added, or something irreversible.
+  2. Player choices MUST cause state changes — never offer paths with identical outcomes.
+  3. Do NOT re-describe unchanged atmosphere, location, or companions.
+  4. Do NOT repeat recent scene structure (avoid: description → companion mention → vague tension → choice with no consequence).
+  5. At pressure/breaking_point: at least one active thread must deepen or shift.
+  6. At catastrophe: force a consequence — no more setup or ambiguous holds.
+  7. sceneRecord.stateChange must describe something concrete. If nothing changed, rule 1 was violated.
+- PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, as spoken dialogue). Do NOT trigger this in ordinary scenes or early in the story.
 - Keep character updates compact but useful.
 
 OUTPUT SHAPE (STRICT JSON):
 {
   "title": "string",
   "prose": "string",
-  "paths": ["string — 0 to 4 items; count must match choiceDirector.count; empty array [] when choiceDirector.type is 'none' or 'freetext'"],
+  "paths": ["string — 0 to 4 items; count must match choiceDirector.count; empty array [] when type is 'none' or 'freetext'"],
   "characters": [
     {
       "name": "string",
@@ -155,11 +180,13 @@ OUTPUT SHAPE (STRICT JSON):
     "chapter": 0,
     "coreQuestion": "",
     "addThreads": [],
-    "removeThreads": []
+    "removeThreads": [],
+    "completedBeat": "",
+    "advanceArc": false
   },
   "sceneRecord": {
     "event": "one sentence: what concretely happened this scene",
-    "stateChange": "one sentence: what is now different in the world (not atmosphere — a real change)",
+    "stateChange": "one sentence: what is now different in the world (a real change, not atmosphere)",
     "reveals": ["new information the player learned"],
     "resolvedThreads": ["thread names closed this scene"]
   },
@@ -167,8 +194,8 @@ OUTPUT SHAPE (STRICT JSON):
     "needed": true,
     "type": "paths | threshold | freetext | none",
     "tension": "one sentence: what is under pressure in this moment",
-    "count": 4,
-    "prompt": "for freetext only: the in-world question or invitation the player is responding to — empty string otherwise"
+    "count": 2,
+    "prompt": "for freetext only: the in-world question or invitation — empty string otherwise"
   },
   "identityRequirement": {
     "required": false,
@@ -182,7 +209,7 @@ OUTPUT SHAPE (STRICT JSON):
 Companions (active):
 ${companionString}
 
-Scene Log (last ${sceneLog.length || 0} scenes):
+Scene Log (last ${sceneLog.length} scenes):
 ${recentLog}
 
 Player's Choice:

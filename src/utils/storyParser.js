@@ -188,8 +188,10 @@ function coerceArcDelta(v) {
   const cq = typeof v.coreQuestion === 'string' && v.coreQuestion.trim() ? v.coreQuestion.trim() : undefined;
   const add = Array.isArray(v.addThreads) ? v.addThreads.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : undefined;
   const remove = Array.isArray(v.removeThreads) ? v.removeThreads.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : undefined;
-  if (t === undefined && b === undefined && c === undefined && cq === undefined && !add?.length && !remove?.length) return null;
-  return { tension: t, beat: b, chapter: c, coreQuestion: cq, addThreads: add, removeThreads: remove };
+  const completedBeat = typeof v.completedBeat === 'string' && v.completedBeat.trim() ? v.completedBeat.trim() : undefined;
+  const advanceArc = v.advanceArc === true ? true : undefined;
+  if (t === undefined && b === undefined && c === undefined && cq === undefined && !add?.length && !remove?.length && !completedBeat && !advanceArc) return null;
+  return { tension: t, beat: b, chapter: c, coreQuestion: cq, addThreads: add, removeThreads: remove, completedBeat, advanceArc };
 }
 
 function normalizeScenePacket(obj, raw) {
