@@ -35,6 +35,7 @@ const createFreshMemory = () => ({
   paths: [],
   companions: [],
   prose: [],
+  sceneLog: [],
   sceneIndex: 0,
   world: {
     clock: { day: 1, time: 'day' },
@@ -48,6 +49,7 @@ const createFreshMemory = () => ({
 
 const ensureWorldArc = (mem) => ({
   ...mem,
+  sceneLog: mem?.sceneLog ?? [],
   world: mem?.world ?? {
     clock: { day: 1, time: 'day' },
     location: { name: 'Unknown Place', tags: [] },
