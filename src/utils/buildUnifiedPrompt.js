@@ -65,7 +65,7 @@ Begin naturally by reflecting the player's last choice as dialogue or action.`;
 RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
 - Scene length: ~200–350 words.
-- Provide 4 distinct, meaningful choices that push different emotions/strategies.
+- Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a first-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All 4 paths must feel like the 4 most natural next moves from where the prose ends.
 - Keep character updates compact but useful.
 
 OUTPUT SHAPE (STRICT JSON):
