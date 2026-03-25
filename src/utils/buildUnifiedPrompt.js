@@ -86,14 +86,28 @@ Chapter Plan:
   const playerName = playerIntro?.playerName || '';
 
   const taskBlock = isFirstScene
-    ? `Start a brand new story using the player's preferences:
+    ? `OPENING SCENE — write the very first moment of this story.
+
+Player setup:
 - Genre: ${playerIntro?.selectedGenres?.join(', ') || 'unspecified'}
-- Protagonist Role: ${playerIntro?.selectedProtagonists?.join(', ') || 'unspecified'}
+- Protagonist: ${playerIntro?.selectedProtagonists?.join(', ') || 'unspecified'}
 - Gender: ${playerIntro?.selectedGender?.join(', ') || 'unspecified'}
 - Tone: ${playerIntro?.selectedTone?.join(', ') || 'unspecified'}
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
 
-Open in second person ("you"). Drop the player into a specific moment — something is already happening. No exposition dumps. Show one concrete thing. End with a decision point. Max 120 words. Do not name the player character.`
+OPENING RULES (all mandatory):
+
+GROUNDING — the first sentence must tell the player exactly where they are (a specific, named place type — e.g. "a narrow shop", "a crossroads at dusk", "the back of a moving cart"). Mention 2–3 physical elements that logically belong there. State clearly whether the player is indoors or outdoors.
+
+COHERENCE — every element in the scene must belong to the same place. No disconnected objects. No unexplained symbols. No surreal juxtapositions.
+
+SITUATION — something is happening right now, not vaguely. A person is approaching. A sound just started. A door is open when it shouldn't be. One concrete event, simple and understandable.
+
+CHOICES — present 2–3 options. Each must be a physical action the player can take immediately based only on what was described. No guessing. No abstract options.
+  Good: "Open the door" / "Call out to the figure" / "Back away quietly"
+  Bad: "Inspect something unknown" / "Question the silence" / "Follow the mystery"
+
+LENGTH — 80–120 words maximum. 2–3 paragraphs, ≤ 2 sentences each. Do not name the player character.`
     : `Continue. Player chose: "${latestChoice}".
 Show the consequence immediately — action, dialogue, or revelation. No atmospheric preamble. Something must change. Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only in NPC dialogue or direct address. Narration stays second-person.` : ''}`;
 
