@@ -41,6 +41,17 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     ? currentArc.requiredBeats.filter(b => !(plan.completedBeats ?? []).includes(b))
     : [];
 
+  // Resolution mode: triggered when the story has earned a payoff but isn't delivering one.
+  // Prevents the "endless escalation" loop by forcing confrontation/commitment/consequence.
+  // Conditions: (high tension AND all beats complete) OR (catastrophe tension AND recent scenes stalled)
+  const recentStall = sceneLog.length >= 2 &&
+    sceneLog.slice(-2).every(r => (r.resolvedThreads?.length ?? 0) === 0 && r.stateChange === '');
+  const isResolutionMode = !isFirstScene && (
+    (tension >= 7 && currentArc !== null && remainingBeats.length === 0) ||
+    (tension >= 9 && recentStall)
+  );
+  const effectiveMode = isResolutionMode ? 'resolution' : tensionMode;
+
   // Only list ACTIVE companions in the prompt (keeps context focused)
   const activeCompanions = (companions || []).filter(c => (c.status ?? 'active') === 'active');
   const companionString = activeCompanions.length > 0
@@ -71,7 +82,7 @@ World:
 - Time: Day ${world?.clock?.day ?? 1}, ${world?.clock?.time ?? 'day'}
 - SceneTags: ${(world?.sceneTags || []).join(', ') || '—'}
 - Objectives: ${(world?.objectives || []).map(o => `${o.status === 'active' ? '[•]' : '[ ]'} ${o.text}`).join(' | ') || '—'}
-- Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Mode: ${tensionMode}
+- Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Mode: ${effectiveMode}
 - Core Question: ${arc?.coreQuestion || '(not yet established — set via arcDelta.coreQuestion on first scene)'}
 - Active Threads: ${(arc?.activeThreads || []).join(' | ') || '(none yet)'}
 ${plan ? `
@@ -121,13 +132,14 @@ RULES:
 - CHOICE TEXT LAW — Choices are verbs, not blurbs. 2–8 words. Immediate action, stance, or value. No decorative prose, no outcome descriptions. Each option must be clearly distinct. Good: "Ask what she remembers" / "Touch the edge" / "Walk away". Bad: "Turn toward the baker and invite them to read a memory aloud, inviting soft candor to mingle with lilac and bread scent."
 - Paths MUST be rooted in the specific people, objects, and moments from the closing line of the prose. Never invent new locations or characters. Never spoil a consequence.
 - CHOICE DIRECTOR: Before writing paths, evaluate whether this scene warrants player input at all. Types: "paths" = concrete options (1–4, prefer 2–3); "threshold" = binary commitment (stay/leave, confess/deny, accept/refuse); "freetext" = player speaks in their own words — for answering a direct question, confessing, writing a message (set choiceDirector.prompt to the in-world question, leave paths=[]); "none" = no input needed — atmosphere, consequence, transition. Set choiceDirector.needed=false for "none". Never manufacture options just to fill a grid.
-- TENSION MODE: This scene is in "${tensionMode}" mode. Shape the scene accordingly:
+- TENSION MODE: This scene is in "${effectiveMode}" mode. Shape the scene accordingly:
   quiet: establish world and tone, introduce one thread gently. Conflict minimal. Something is noticed but not confronted.
   unease: introduce friction or wrongness. No explosion — the feeling that something is off. One thing becomes uncertain.
   pressure: escalate. Force a trade-off, reveal something unwelcome, or complicate a relationship. The player must respond to something real.
   breaking_point: irreversible. This scene demands a major decision or commitment. The player cannot stay neutral. Choices: threshold or 1–2 weighted paths.
   catastrophe: maximum consequence. Something fails, collapses, or is lost. The story will not recover easily from this. Choices: none or threshold only.
-  - Tension direction: raise (+1) at quiet/unease/pressure; hold (0) or raise at breaking_point; drop (-1) only for earned relief after catastrophe.
+  resolution: PAYOFF. The story has earned this. Do NOT introduce new clues, threads, or mysteries. Do NOT stall or escalate further. You MUST do at least one of: reveal a key truth, confront a character directly, force a decisive and irreversible choice, or close a major thread. The situation must change permanently. Choices lead to outcomes, not investigation. Good: "Confront them" / "Accept the deal" / "Destroy the evidence" / "Walk away for good". Bad: "Inspect further" / "Look around" / "Follow another lead". Set arcDelta.advanceArc: true if the resolution condition is met.
+  - Tension direction: raise (+1) at quiet/unease/pressure; hold (0) or raise at breaking_point; drop (-1) only for earned relief after catastrophe or resolution.
 - ARC DIRECTION:${currentArc ? `
   Goal: ${currentArc.arcGoal}
   Lesson: ${currentArc.lesson}
