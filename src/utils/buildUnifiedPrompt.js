@@ -56,7 +56,7 @@ World:
 - Tone: ${playerIntro?.selectedTone?.join(', ') || 'unspecified'}
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
 
-Open with a vivid, immersive introduction (show, don't tell). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps.`
+Open with a vivid, immersive introduction in second person ("you"). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps. Do not invent a name for the player character.`
     : `Continue the story with strong pacing and emotional nuance.
 Begin naturally by reflecting the player's last choice as dialogue or action.`;
 
@@ -65,7 +65,8 @@ Begin naturally by reflecting the player's last choice as dialogue or action.`;
 RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
 - Scene length: ~200–350 words.
-- Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a first-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All 4 paths must feel like the 4 most natural next moves from where the prose ends.
+- SECOND PERSON ONLY. The protagonist is the player. Always narrate in second person ("you step", "you notice", "you feel") — never assign a proper name to the protagonist, never use third-person ("he", "she", "they", or any named character) for the player character. Other NPCs may have names. The player is always "you".
+- Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a direct second-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All 4 paths must feel like the 4 most natural next moves from where the prose ends.
 - Keep character updates compact but useful.
 
 OUTPUT SHAPE (STRICT JSON):
