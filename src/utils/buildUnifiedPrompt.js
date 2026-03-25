@@ -48,6 +48,8 @@ World:
 - Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${arc?.tension ?? 3}/10
 `.trim();
 
+  const playerName = playerIntro?.playerName || '';
+
   const taskBlock = isFirstScene
     ? `Start a brand new story using the player's preferences:
 - Genre: ${playerIntro?.selectedGenres?.join(', ') || 'unspecified'}
@@ -56,9 +58,9 @@ World:
 - Tone: ${playerIntro?.selectedTone?.join(', ') || 'unspecified'}
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
 
-Open with a vivid, immersive introduction in second person ("you"). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps. Do not invent a name for the player character.`
+Open with a vivid, immersive introduction in second person ("you"). The world should reveal itself through exploration, inspection, and dialogue — avoid exposition dumps. Do not invent a name for the player character. At the close of the scene, have a character or the world itself ask for the player's name in a natural, in-fiction way — woven into the narrative, never as a game prompt.`
     : `Continue the story with strong pacing and emotional nuance.
-Begin naturally by reflecting the player's last choice as dialogue or action.`;
+Begin naturally by reflecting the player's last choice as dialogue or action.${playerName ? `\nThe protagonist's name is "${playerName}". Use it sparingly — only in NPC dialogue, direct address, or emotionally significant moments. Default narration stays second-person "you".` : ''}`;
 
   const system = `You are the narrative engine for a branching story game. Write in clear, vivid prose.
 

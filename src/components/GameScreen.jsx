@@ -23,7 +23,7 @@ import CharacterLog from './characterLog';
 import QuestLog from './QuestLog';
 import ItemsPanel from './ItemsPanel';
 import NarrativeBranchView from './NarrativeBranchView';
-import { HeaderBar, ChoiceGrid } from './GameScreenComponents';
+import { HeaderBar, ChoiceGrid, NameInputOverlay } from './GameScreenComponents';
 
 import './styles.css';
 import backgroundImage from '../images/background-black.jpg';
@@ -73,9 +73,13 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [showSaveOptions, setShowSaveOptions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
+  const [playerName, setPlayerName] = useState(storyOptions?.playerName || '');
+  const [showNameInput, setShowNameInput] = useState(false);
 
   const storyBoxRef = useRef(null);
   const sceneGenerated = useRef(false);
+  const nameInputShown = useRef(Boolean(storyOptions?.playerName));
+  const playerNameRef = useRef(storyOptions?.playerName || '');
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -105,6 +109,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   useEffect(() => {
     graphRef.current = narrativeGraph;
   }, [narrativeGraph]);
+
+  useEffect(() => {
+    playerNameRef.current = playerName;
+  }, [playerName]);
 
   const smoothScrollToBottom = (el) => {
     if (!el) return;
@@ -148,7 +156,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       memoryRef.current = initialMemory;
       setIsLoading(true);
 
-      const { system: openingSys, user: openingUser } = buildScenePrompt(initialMemory, '', storyOptions);
+      const { system: openingSys, user: openingUser } = buildScenePrompt(initialMemory, '', { ...storyOptions, playerName });
       const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
       debug.log('[PROMPT 0]', openingUser);
 
@@ -182,6 +190,14 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     el.addEventListener('scroll', onScroll);
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Show name input overlay after the first scene finishes loading
+  useEffect(() => {
+    if (segments.length > 0 && !isLoading && !nameInputShown.current) {
+      nameInputShown.current = true;
+      setShowNameInput(true);
+    }
+  }, [segments.length, isLoading]);
 
   useEffect(() => {
     const el = storyBoxRef.current;
@@ -251,7 +267,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           ...prev,
           { html: '<i class="text-amber-300/70">The story hesitates for a moment\u2026</i>', animate: true, type: 'retry' }
         ]);
-        const { system: retrySys, user: retryUser } = buildScenePrompt(baseMemory, choice, storyOptions);
+        const { system: retrySys, user: retryUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName: playerNameRef.current });
         const retryMessages = [{ role: 'system', content: retrySys }, { role: 'user', content: retryUser }];
         return new Promise((resolve) => {
           generateScene(retryMessages, async (newResponse) => {
@@ -309,7 +325,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
     const baseMemory = createMemorySnapshot(memoryRef.current);
     const nextSceneIndex = (baseMemory.sceneIndex ?? 0) + 1;
-    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, storyOptions);
+    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName });
     const branchMessages = [{ role: 'system', content: branchSys }, { role: 'user', content: branchUser }];
 
     debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchUser);
@@ -340,7 +356,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     const normalizedGraph = normalizeNarrativeGraph(narrativeGraph);
 
     saveGameToSlot(selectedSlot, {
-      options: { ...storyOptions, prompt, resumeFromSave: true },
+      options: { ...storyOptions, prompt, resumeFromSave: true, playerName },
       memory: gameMemory,
       ui: {
         displayedStory: segments.map((segment) => segment.html).join(''),
@@ -520,6 +536,16 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         >
           Jump to latest
         </button>
+      )}
+
+      {showNameInput && (
+        <NameInputOverlay
+          onSubmit={(name) => {
+            setPlayerName(name);
+            playerNameRef.current = name;
+            setShowNameInput(false);
+          }}
+        />
       )}
     </div>
   );
