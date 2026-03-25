@@ -25,6 +25,7 @@ export function migrateMemory(raw) {
       tension: rawArc.tension ?? 3,
       coreQuestion: rawArc.coreQuestion ?? '',
       activeThreads: Array.isArray(rawArc.activeThreads) ? rawArc.activeThreads : [],
+      arcPlan: rawArc.arcPlan ?? null,
       chapterPlan: rawArc.chapterPlan ?? null
     };
 
