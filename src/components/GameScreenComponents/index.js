@@ -3,3 +3,4 @@ export { default as HeaderBar } from './HeaderBar';
 export { default as ChoiceGrid } from './ChoiceGrid';
 export { default as StoryDisplay } from './StoryDisplay';
 export { default as NameInputOverlay } from './NameInputOverlay';
+export { default as FreeTextInput } from './FreeTextInput';

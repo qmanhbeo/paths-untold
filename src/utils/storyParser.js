@@ -162,11 +162,12 @@ function coerceCompanionsDelta(v) {
 function coerceChoiceDirector(v) {
   if (!v || typeof v !== 'object') return null;
   const needed = typeof v.needed === 'boolean' ? v.needed : true;
-  const validTypes = ['value', 'action', 'relational', 'threshold', 'none'];
-  const type = validTypes.includes(v.type) ? v.type : 'action';
+  const validTypes = ['paths', 'threshold', 'freetext', 'none', 'value', 'action', 'relational'];
+  const type = validTypes.includes(v.type) ? v.type : 'paths';
   const tension = typeof v.tension === 'string' ? v.tension : '';
   const count = Number.isInteger(v.count) && v.count >= 0 && v.count <= 4 ? v.count : null;
-  return { needed, type, tension, count };
+  const prompt = typeof v.prompt === 'string' ? v.prompt.trim() : '';
+  return { needed, type, tension, count, prompt };
 }
 
 function coerceArcDelta(v) {

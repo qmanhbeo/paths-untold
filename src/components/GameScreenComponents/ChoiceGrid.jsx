@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 
-// Determines the grid class based on choice count
 function gridClass(count) {
   if (count === 1) return 'grid-cols-1';
-  if (count === 3) return 'grid-cols-2';
-  return 'grid-cols-2'; // 2 or 4
+  return 'grid-cols-2';
 }
 
-// phase: 'idle' → 'chosen' (selected glows, others fade) → 'loading' → 'idle'
-const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
+// phase: 'idle' → 'chosen' → 'loading' → 'idle'
+const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false, variant = 'default' }) => {
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [phase, setPhase] = useState('idle');
   const timerRef = useRef(null);
@@ -27,7 +25,6 @@ const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
     onContinue?.();
   };
 
-  // When new choices arrive (scene loaded), reset to idle
   useEffect(() => {
     if (!disabled) {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -36,10 +33,10 @@ const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
     }
   }, [choices, disabled]);
 
-  // Loading phase — waiting for next scene
+  // Loading state
   if (phase === 'loading') {
     return (
-      <div className="font-cardo min-h-[80px] flex flex-col items-center justify-center gap-3">
+      <div className="font-cardo min-h-[80px] flex flex-col items-center justify-center">
         <p className="text-amber-100/40 italic tracking-[0.25em] animate-pulse-slow text-sm">
           ✦ &nbsp; The paths align… &nbsp; ✦
         </p>
@@ -47,7 +44,7 @@ const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
     );
   }
 
-  // Still generating (initial scene load)
+  // Still generating (initial load, no onContinue means it's waiting for AI)
   if (choices.length === 0 && !onContinue) {
     return (
       <div className="font-cardo min-h-[80px] flex items-center justify-center">
@@ -58,8 +55,8 @@ const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
     );
   }
 
-  // No choices — show a Continue button
-  if (choices.length === 0 && onContinue) {
+  // No choices — Continue button
+  if (choices.length === 0) {
     return (
       <div className="font-cardo flex justify-center animate-blur-in">
         <button
@@ -73,7 +70,41 @@ const ChoiceGrid = ({ choices, onChoice, onContinue, disabled = false }) => {
     );
   }
 
-  // Idle or chosen — show choice buttons
+  // Threshold — two choices stacked vertically with "or" separator
+  if (variant === 'threshold' && choices.length === 2) {
+    return (
+      <div className="font-cardo flex flex-col items-center gap-0 animate-blur-in max-w-xs mx-auto w-full">
+        {choices.map((choice, index) => {
+          const isSelected = index === selectedIndex;
+          const isChosen = phase === 'chosen';
+          let stateClasses = '';
+          if (isChosen && isSelected) {
+            stateClasses = 'border-amber-400 text-amber-200 scale-105 shadow-lg shadow-amber-500/25 opacity-100';
+          } else if (isChosen && !isSelected) {
+            stateClasses = 'border-gray-700 text-white/0 scale-95 opacity-0';
+          } else {
+            stateClasses = 'border-gray-300 text-white mix-blend-difference hover:border-amber-200/60 hover:scale-[1.02]';
+          }
+          return (
+            <div key={index} className="w-full flex flex-col items-center">
+              <button
+                disabled={disabled}
+                onClick={() => handleClick(choice, index)}
+                className={`w-full border rounded-lg p-4 sm:p-5 text-center text-sm transition-all duration-500 cursor-pointer ${stateClasses}`}
+              >
+                {choice}
+              </button>
+              {index === 0 && (
+                <span className="text-white/20 text-xs tracking-[0.3em] uppercase py-2">or</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Default grid (1–4 choices)
   return (
     <div className={`font-cardo grid ${gridClass(choices.length)} gap-2 sm:gap-4 animate-blur-in`}>
       {choices.map((choice, index) => {
