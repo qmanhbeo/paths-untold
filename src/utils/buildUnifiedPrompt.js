@@ -68,7 +68,8 @@ RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
 - Scene length: ~200–350 words.
 - SECOND PERSON ONLY. The protagonist is the player. Always narrate in second person ("you step", "you notice", "you feel") — never assign a proper name to the protagonist, never use third-person ("he", "she", "they", or any named character) for the player character. Other NPCs may have names. The player is always "you".
-- Paths MUST be concrete actions the player can take RIGHT NOW, rooted in the specific people, objects, and moments from the closing line of the prose just written. Never invent new locations or characters for the paths — only reference what already exists in the scene. Write each path as a direct second-person or imperative action (e.g. "Ask the old man about the riddle", "Pick up the flyer and read it closely") — never as an outcome description or spoiler. All paths must feel like the most natural next moves from where the prose ends.
+- CHOICE TEXT LAW — The scene may be poetic. The choice must be decisive. Write paths as immediate actions, stances, or value expressions — not as mini-scene summaries or atmospheric blurbs. Target 2–8 words; 12 at most. Strong verbs preferred. Do not include decorative prose, predicted consequences, or atmospheric padding — the scene body already carries that weight; choice text carries decision clarity only. Preserve distinctiveness between options by varying action/value/risk, not by adding more words. Good: "Ask what she remembers" / "Touch the edge" / "Wait for a sign" / "Tell her the truth" / "Walk away". Bad: "Turn toward the baker and invite them to read a memory aloud, inviting soft candor to mingle with lilac and bread scent."
+- Paths MUST be rooted in the specific people, objects, and moments from the closing line of the prose. Never invent new locations or characters — only reference what already exists in the scene. Never describe an outcome or spoil a consequence.
 - CHOICE DIRECTOR: Before writing paths, evaluate whether this scene warrants player input at all, and what form it should take. Types: "paths" = the player picks from concrete options (1–4, prefer 2–3 over 4); "threshold" = a binary fork between two mutually exclusive stances — use when the moment demands a commitment (stay/leave, confess/deny, accept/refuse); "freetext" = the player speaks in their own words — use when they are answering a direct question, confessing something, writing a message, or expressing themselves to another character (set choiceDirector.prompt to the in-world question/invitation, leave paths=[]); "none" = no input needed — use for atmosphere, consequence, and transition scenes. Set choiceDirector.needed=false for "none". Never manufacture options just to fill a grid.
 - PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, written as spoken dialogue, not a game instruction). Do NOT trigger this in ordinary scenes or early in the story.
 - Keep character updates compact but useful.
@@ -77,7 +78,7 @@ OUTPUT SHAPE (STRICT JSON):
 {
   "title": "string",
   "prose": "string",
-  "paths": ["string", "string", "string", "string"],
+  "paths": ["string — 0 to 4 items; count must match choiceDirector.count; empty array [] when choiceDirector.type is 'none' or 'freetext'"],
   "characters": [
     {
       "name": "string",
