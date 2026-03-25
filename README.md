@@ -1,10 +1,10 @@
 # 🌌 Paths Untold
 
-**A Human-in-the-Loop, Stateful LLM Narrative Environment**
+**A Stateful, Human-in-the-Loop Narrative System for Long-Horizon Interaction**
 
-Paths Untold is an experimental interactive narrative system that explores how large language models behave under **persistent state, structured constraints, and sequential human decision-making** — wrapped inside a cozy, playable story game.
+Paths Untold is not designed to generate stories, but to sustain them.
 
-Rather than treating an LLM as a one-shot storyteller, Paths Untold frames narrative generation as a **long-horizon control problem**: each scene must remain coherent with accumulated history, character identity, emotional state, and player interventions.
+Rather than treating an LLM as a one-shot storyteller, it frames narrative generation as a **long-horizon control problem**: each scene must remain coherent with accumulated history, character identity, emotional state, and player interventions. Over time, the system does not just respond to player actions — it begins to reflect patterns in those actions, allowing the player to encounter a version of themselves shaped through choice, consequence, and memory.
 
 At the same time, it is designed to be *pleasant to play*: calm pacing, evocative writing, and a warm interface where choices matter and characters feel remembered.
 
@@ -21,6 +21,17 @@ It intentionally sits at the intersection of **systems design** and **interactiv
 
 ---
 
+## 🌱 What This Enables
+
+Traditional stories are fixed.
+Branching stories simulate variation.
+
+Paths Untold explores something else: a narrative that evolves with the player over time, where meaning is not prewritten but emerges from interaction. The result is not just different outcomes, but different interpretations — stories that feel personally shaped rather than selected.
+
+A central challenge is balancing **stability and drift**: preserving identity and causality over time without reducing the system to repetition or allowing it to dissolve into incoherence. That tension is the core research problem.
+
+---
+
 ## 🧠 System Overview (Under the Hood)
 
 At its core, Paths Untold is a **stateful LLM environment** with three tightly coupled components:
@@ -32,7 +43,7 @@ Each generation step is produced from a *unified prompt* that explicitly encodes
 * Current narrative context
 * Persistent character memory (traits, relationships, emotions)
 * A compressed summary of prior scenes (long-horizon memory)
-* The player’s most recent action
+* The player's most recent action
 
 This turns free-form generation into a **controlled transformation of world state**.
 
@@ -53,7 +64,7 @@ This enforces a **contract** between the model and the system, making failures o
 
 ### 3. Human-in-the-Loop Control
 
-The player functions as an external decision-maker:
+The player functions as an external decision-maker, not a user:
 
 * Each choice represents an intervention in the system
 * Actions feed back into persistent memory and future generations
@@ -65,15 +76,15 @@ Interaction is treated as **sequential control**, not simple input.
 
 ## 🎮 The Game Experience
 
-From the player’s perspective, Paths Untold is a quiet, choice-driven story game:
+From the player's perspective, Paths Untold is a quiet, choice-driven story game:
 
 * Each scene presents a short narrative moment
 * Choices appear only when the story earns them — and only in the form that fits (pick from options, a binary commitment, your own words, or none)
-* Choice labels are short and decisive — the scene is poetic; the choice is a verb
+* Choices are expressed as concise actions rather than descriptive summaries, so the player's intention — not the system's narration — drives the moment
 * Characters remember what you do and how you treat them
 * Emotional tone shifts subtly over time
 
-There are no timers, no scores, and no “correct” paths — only unfolding consequences.
+There are no timers, no scores, and no "correct" paths — only unfolding consequences.
 
 ---
 
@@ -83,7 +94,7 @@ There are no timers, no scores, and no “correct” paths — only unfolding co
 * **Persistent character memory** (traits, relationships, emotional states)
 * **Long-horizon coherence** via scene summaries and state compression
 * **Choice Director** — choices are conditional: scenes can produce paths, a binary threshold, free-text input, or no choice at all, depending on what the narrative moment earns
-* **Decisive choice text** — choice labels are short, direct, and immediate (2–8 words); the scene carries the atmosphere, the choice carries the decision
+* **Concise choice language** — choices are immediate actions or stances, not branch descriptions; the scene carries the atmosphere, the choice carries the decision
 * **Deferred identity** — the player's name is only requested when the story genuinely earns it (signing a document, a formal introduction, a deepening relationship)
 * **Discrete action space** for meaningful player intervention
 * **Save / Load system** with multiple slots
@@ -238,17 +249,17 @@ The screenshots below show the full interaction loop: starting a story, making c
 
 ### Start & Setup
 
-**Start Screen**  
+**Start Screen**
 A minimal entry point into the narrative world.
 
 ![Start Screen](images/0_StartScreen.png)
 
-**Save Slots**  
+**Save Slots**
 Multiple timelines can be saved and revisited, allowing parallel narrative exploration.
 
 ![Save Slots](images/1_SavedSlots.png)
 
-**Preferences**  
+**Preferences**
 Lightweight configuration before entering the story.
 
 ![Preferences](images/2_Preferences.png)
@@ -257,22 +268,22 @@ Lightweight configuration before entering the story.
 
 ### Narrative Flow
 
-**Generated Scene**  
+**Generated Scene**
 LLM-generated narrative grounded in accumulated state and memory.
 
 ![Scene 0](images/3_Scene0.png)
 
-**Player Choices**  
+**Player Choices**
 Discrete actions that intervene in the story and influence future generations.
 
 ![Choices](images/4_Choice0.png)
 
-**Ongoing Story**  
+**Ongoing Story**
 Consequences accumulate across scenes, maintaining tone, character identity, and emotional continuity.
 
 ![Scene 1](images/5_Scene1.png)
 
 ---
 
-The visuals are intentionally restrained.  
+The visuals are intentionally restrained.
 The focus is on **reading, choosing, and being remembered** — not spectacle.
