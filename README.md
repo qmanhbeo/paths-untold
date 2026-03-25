@@ -40,9 +40,9 @@ At its core, Paths Untold is a **stateful LLM environment** with three tightly c
 
 Each generation step is produced from a *unified prompt* that explicitly encodes:
 
-* Current narrative context
+* Current narrative context (location, time, objectives, scene tags)
 * Persistent character memory (traits, relationships, emotions)
-* A compressed summary of prior scenes (long-horizon memory)
+* A structured causal scene log — what happened, what changed, what was revealed — rather than raw prose
 * The player's most recent action
 
 This turns free-form generation into a **controlled transformation of world state**.
@@ -92,7 +92,9 @@ There are no timers, no scores, and no "correct" paths — only unfolding conseq
 
 * **Dynamic scene-by-scene storytelling** powered by LLMs
 * **Persistent character memory** (traits, relationships, emotional states)
-* **Long-horizon coherence** via scene summaries and state compression
+* **Nested narrative pacing** — Arc planner (macro: open→build→peak→resolve across chapters) feeds Chapter planner (micro: open→build→resolve→cooldown), which shapes individual scenes (mini: ground→shift→decide). The story has a spine.
+* **Five tension modes + resolution + cooldown** — named scene modes (quiet / unease / pressure / breaking_point / catastrophe) drive scene shape, choice type, and consequence weight. Resolution fires automatically when the story has earned a payoff but isn't delivering one. Cooldown follows every resolved chapter arc.
+* **Causal scene log** — the last 5 scenes are stored as structured records (what happened, what changed, what was revealed, what was resolved) rather than raw prose; the LLM sees the causal chain, not just the texture
 * **Choice Director** — choices are conditional: scenes can produce paths, a binary threshold, free-text input, or no choice at all, depending on what the narrative moment earns
 * **Concise choice language** — choices are immediate actions or stances, not branch descriptions; the scene carries the atmosphere, the choice carries the decision
 * **Deferred identity** — the player's name is only requested when the story genuinely earns it (signing a document, a formal introduction, a deepening relationship)
@@ -226,7 +228,7 @@ Planned improvements include:
 * Streaming story text
 * Stronger schema guarantees and recovery logic
 * Expanded character lifecycle and relationship modeling
-* Instrumentation for failure-mode analysis
+* Instrumentation for failure-mode analysis (tension curve, beat completion rate, resolution trigger frequency)
 
 See [`narrative-study/`](narrative-study/) for design notes and session change logs.
 

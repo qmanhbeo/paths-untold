@@ -22,10 +22,12 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
       objectives: [],
       flags: {}
     },
-    arc = { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], chapterPlan: null }
+    arc = { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null }
   } = gameMemory;
 
-  // 5-mode tension derived from numeric tension (0–10)
+  const isFirstScene = prose.length === 0;
+
+  // ── Tension mode (from numeric tension 0–10) ───────────────────────────────
   const tension = arc?.tension ?? 3;
   const tensionMode =
     tension <= 2 ? 'quiet'
@@ -34,25 +36,28 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     : tension <= 8 ? 'breaking_point'
     : 'catastrophe';
 
-  // Chapter plan context
-  const plan = arc?.chapterPlan ?? null;
-  const currentArc = plan ? plan.arcs[plan.currentArcIndex ?? 0] : null;
-  const remainingBeats = currentArc
-    ? currentArc.requiredBeats.filter(b => !(plan.completedBeats ?? []).includes(b))
-    : [];
+  // ── Arc / chapter stage ────────────────────────────────────────────────────
+  const arcPlan = arc?.arcPlan ?? null;
+  const arcStage = arcPlan
+    ? (arcPlan.arcStageSequence[arcPlan.currentStageIndex] ?? 'open')
+    : null;
 
-  // Resolution mode: triggered when the story has earned a payoff but isn't delivering one.
-  // Prevents the "endless escalation" loop by forcing confrontation/commitment/consequence.
-  // Conditions: (high tension AND all beats complete) OR (catastrophe tension AND recent scenes stalled)
+  const chapterPlan = arc?.chapterPlan ?? null;
+  const chapterStage = chapterPlan
+    ? (chapterPlan.chapterStageSequence[chapterPlan.currentStageIndex] ?? 'open')
+    : null;
+
+  // ── Effective mode (cooldown > resolution > tension) ──────────────────────
+  const isCooldown = chapterStage === 'cooldown';
   const recentStall = sceneLog.length >= 2 &&
     sceneLog.slice(-2).every(r => (r.resolvedThreads?.length ?? 0) === 0 && r.stateChange === '');
-  const isResolutionMode = !isFirstScene && (
-    (tension >= 7 && currentArc !== null && remainingBeats.length === 0) ||
+  const isResolutionMode = !isFirstScene && !isCooldown && (
+    chapterStage === 'resolve' ||
     (tension >= 9 && recentStall)
   );
-  const effectiveMode = isResolutionMode ? 'resolution' : tensionMode;
+  const effectiveMode = isCooldown ? 'cooldown' : isResolutionMode ? 'resolution' : tensionMode;
 
-  // Only list ACTIVE companions in the prompt (keeps context focused)
+  // ── Companions ─────────────────────────────────────────────────────────────
   const activeCompanions = (companions || []).filter(c => (c.status ?? 'active') === 'active');
   const companionString = activeCompanions.length > 0
     ? activeCompanions.map(c =>
@@ -61,9 +66,8 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     : 'None yet';
 
   const phaseOutPromptExtras = injectPhaseOutLogicIntoPrompt(companions, sceneIndex);
-  const isFirstScene = prose.length === 0;
 
-  // Structured scene log replaces raw prose. Causal record of what actually happened.
+  // ── Scene log ──────────────────────────────────────────────────────────────
   const recentLog = sceneLog.length > 0
     ? sceneLog.map(r =>
         [
@@ -76,6 +80,14 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
       ).join('\n\n')
     : '(story just started)';
 
+  // ── World block (injected into user message) ───────────────────────────────
+  const arcStageLabel = arcStage
+    ? `${arcStage}${arcPlan ? ` [arc ${arcPlan.currentStageIndex + 1}/${arcPlan.arcStageSequence.length}]` : ''}`
+    : '(planning)';
+  const chapterStageLabel = chapterStage
+    ? `${chapterStage}${chapterPlan ? ` [ch ${chapterPlan.currentStageIndex + 1}/${chapterPlan.chapterStageSequence.length}]` : ''}`
+    : '(planning)';
+
   const worldBlock = `
 World:
 - Location: ${world?.location?.name ?? 'Unknown Place'} [${(world?.location?.tags || []).join(', ')}]
@@ -83,17 +95,18 @@ World:
 - SceneTags: ${(world?.sceneTags || []).join(', ') || '—'}
 - Objectives: ${(world?.objectives || []).map(o => `${o.status === 'active' ? '[•]' : '[ ]'} ${o.text}`).join(' | ') || '—'}
 - Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Mode: ${effectiveMode}
-- Core Question: ${arc?.coreQuestion || '(not yet established — set via arcDelta.coreQuestion on first scene)'}
+- Arc Stage: ${arcStageLabel} | Chapter Stage: ${chapterStageLabel}
+- Core Question: ${arc?.coreQuestion || '(not yet established)'}
 - Active Threads: ${(arc?.activeThreads || []).join(' | ') || '(none yet)'}
-${plan ? `
+${chapterPlan ? `
 Chapter Plan:
-- Theme: ${plan.chapterTheme || '—'}
-- Current Arc Goal: ${currentArc?.arcGoal || '—'}
-- Arc Lesson: ${currentArc?.lesson || '—'}
-- Required Beats Remaining: ${remainingBeats.join(' | ') || '(all complete — resolve arc or advance)'}
-- Resolution Condition: ${currentArc?.resolutionCondition || '—'}`.trim() : '- Chapter Plan: (being established)'}
+- Goal: ${chapterPlan.chapterGoal || '—'}
+- Must Resolve: ${chapterPlan.mustResolve || '—'}
+- Must Advance: ${chapterPlan.mustAdvanceArcThread || '—'}
+- Completion Condition: ${chapterPlan.chapterCompletionCondition || '—'}`.trim() : '- Chapter Plan: (being established)'}
 `.trim();
 
+  // ── Task block ─────────────────────────────────────────────────────────────
   const playerName = playerIntro?.playerName || '';
 
   const taskBlock = isFirstScene
@@ -122,11 +135,27 @@ LENGTH — 80–120 words maximum. 2–3 paragraphs, ≤ 2 sentences each. Do no
     : `Continue. Player chose: "${latestChoice}".
 Show the consequence immediately — action, dialogue, or revelation. No atmospheric preamble. Something must change. Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only in NPC dialogue or direct address. Narration stays second-person.` : ''}`;
 
+  // ── System prompt ──────────────────────────────────────────────────────────
+  const arcDirectionBlock = chapterPlan
+    ? `
+  Arc Stage: ${arcStageLabel}${arcPlan ? `\n  Arc Goal: ${arcPlan.arcGoal}\n  Arc Theme: ${arcPlan.arcTheme}` : ''}
+  Chapter Stage: ${chapterStageLabel}
+  Chapter Goal: ${chapterPlan.chapterGoal || '—'}
+  Must Resolve: ${chapterPlan.mustResolve || '—'}
+  Must Advance: ${chapterPlan.mustAdvanceArcThread || '—'}
+  Chapter Completion Condition: ${chapterPlan.chapterCompletionCondition || '—'}
+  This scene must either deepen the must-resolve tension OR push toward the chapter completion condition.
+  If chapter completion is reached, set arcDelta.advanceChapterStage: true to move to the next stage.
+  If the arc resolution condition is met, set arcDelta.advanceArcStage: true.`
+    : `
+  No chapter plan yet. On the first scene: set arcDelta.coreQuestion to the central dramatic question of this story ("Will you…" / "Can you…" / "What does it mean to…"). Introduce one or two narrative threads via arcDelta.addThreads.`;
+
   const system = `You are a state-driven narrative engine for a branching story game. Write like a game, not a novel — direct, clear, fast.
 
 RULES:
 - Return ONLY valid JSON (no markdown, no comments, no trailing commas).
 - SCENE LENGTH: hard maximum 120 words. 2–3 short paragraphs, each ≤ 2 sentences. Reach the decision point fast — no long descriptive buildup.
+- SCENE STRUCTURE: within those 2–3 paragraphs follow a mini arc — ¶1: ground the moment (where, who, what's surface-visible); ¶2: something shifts or is revealed (pressure, contradiction, new information); ¶3: reach the decision point. Keep it implicit and natural, not mechanical.
 - STYLE: simple and direct. Minimal metaphors. Every sentence must either move the situation forward or give the player information they need to choose. Do not linger. Do not repeat what the last scene already established.
 - SECOND PERSON ONLY. The protagonist is "you" — always. Other NPCs may have names. Never use third-person ("he", "she", "they") for the player character.
 - CHOICE TEXT LAW — Choices are verbs, not blurbs. 2–8 words. Immediate action, stance, or value. No decorative prose, no outcome descriptions. Each option must be clearly distinct. Good: "Ask what she remembers" / "Touch the edge" / "Walk away". Bad: "Turn toward the baker and invite them to read a memory aloud, inviting soft candor to mingle with lilac and bread scent."
@@ -138,16 +167,10 @@ RULES:
   pressure: escalate. Force a trade-off, reveal something unwelcome, or complicate a relationship. The player must respond to something real.
   breaking_point: irreversible. This scene demands a major decision or commitment. The player cannot stay neutral. Choices: threshold or 1–2 weighted paths.
   catastrophe: maximum consequence. Something fails, collapses, or is lost. The story will not recover easily from this. Choices: none or threshold only.
-  resolution: PAYOFF. The story has earned this. Do NOT introduce new clues, threads, or mysteries. Do NOT stall or escalate further. You MUST do at least one of: reveal a key truth, confront a character directly, force a decisive and irreversible choice, or close a major thread. The situation must change permanently. Choices lead to outcomes, not investigation. Good: "Confront them" / "Accept the deal" / "Destroy the evidence" / "Walk away for good". Bad: "Inspect further" / "Look around" / "Follow another lead". Set arcDelta.advanceArc: true if the resolution condition is met.
-  - Tension direction: raise (+1) at quiet/unease/pressure; hold (0) or raise at breaking_point; drop (-1) only for earned relief after catastrophe or resolution.
-- ARC DIRECTION:${currentArc ? `
-  Goal: ${currentArc.arcGoal}
-  Lesson: ${currentArc.lesson}
-  Beats remaining: ${remainingBeats.join(', ') || 'none — move toward resolution'}
-  This scene must advance one remaining beat OR bring the arc toward its resolution condition.
-  If a required beat occurs, name it exactly in arcDelta.completedBeat.
-  If the resolution condition is met, set arcDelta.advanceArc: true.` : `
-  No chapter plan yet. On the first scene: set arcDelta.coreQuestion to the central dramatic question of this story ("Will you…" / "Can you…" / "What does it mean to…"). Introduce one or two narrative threads via arcDelta.addThreads.`}
+  resolution: PAYOFF. The story has earned this. Do NOT introduce new clues, threads, or mysteries. Do NOT stall or escalate further. You MUST do at least one of: reveal a key truth, confront a character directly, force a decisive and irreversible choice, or close a major thread. The situation must change permanently. Choices lead to outcomes, not investigation. Good: "Confront them" / "Accept the deal" / "Destroy the evidence" / "Walk away for good". Bad: "Inspect further" / "Look around" / "Follow another lead". Set arcDelta.advanceChapterStage: true if chapter completion condition is met.
+  cooldown: decompression. The chapter's core conflict just closed. Breathe — let consequences land quietly. Establish new normal. No new conflicts, no escalation. Reflect on what was lost or gained. Choices: simple preference (where to go, who to talk to). Tension direction: drop (-1). Prepare threads for the next chapter.
+  - Tension direction: raise (+1) at quiet/unease/pressure; hold (0) or raise at breaking_point; drop (-1) only for earned relief after catastrophe, resolution, or cooldown.
+- ARC DIRECTION:${arcDirectionBlock}
 - PROGRESSION RULES — every scene must advance the story or it is filler:
   1. Introduce at least ONE concrete development: new information, a relationship that shifts, a constraint added, or something irreversible.
   2. Player choices MUST cause state changes — never offer paths with identical outcomes.
@@ -209,7 +232,9 @@ OUTPUT SHAPE (STRICT JSON):
     "addThreads": [],
     "removeThreads": [],
     "completedBeat": "",
-    "advanceArc": false
+    "advanceArc": false,
+    "advanceChapterStage": false,
+    "advanceArcStage": false
   },
   "sceneRecord": {
     "event": "one sentence: what concretely happened this scene",

@@ -69,21 +69,30 @@
  * @typedef {"quiet"|"unease"|"pressure"|"breaking_point"|"catastrophe"} TensionMode
  */
 
+/** @typedef {"open"|"build"|"peak"|"resolve"} ArcStage */
+/** @typedef {"open"|"build"|"resolve"|"cooldown"} ChapterStage */
+
 /**
+ * Macro plan — spans multiple chapters, generated once at story start.
  * @typedef {{
  *   arcGoal: string,
- *   lesson: string,
- *   tensionModes: TensionMode[],
- *   requiredBeats: string[],
- *   resolutionCondition: string
+ *   arcTheme: string,
+ *   arcQuestion: string,
+ *   arcStageSequence: ArcStage[],
+ *   arcResolutionCondition: string,
+ *   currentStageIndex: number
  * }} ArcPlan
  */
 
 /**
+ * Micro plan — one chapter inside the arc, generated per chapter.
  * @typedef {{
- *   chapterTheme: string,
- *   arcs: ArcPlan[],
- *   currentArcIndex: number,
+ *   chapterGoal: string,
+ *   chapterStageSequence: ChapterStage[],
+ *   mustResolve: string,
+ *   mustAdvanceArcThread: string,
+ *   chapterCompletionCondition: string,
+ *   currentStageIndex: number,
  *   completedBeats: string[]
  * }} ChapterPlan
  */
@@ -114,6 +123,7 @@
  *     tension: number,
  *     coreQuestion: string,
  *     activeThreads: string[],
+ *     arcPlan: ArcPlan|null,
  *     chapterPlan: ChapterPlan|null
  *   }
  * }} GameMemory

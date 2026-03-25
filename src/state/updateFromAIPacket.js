@@ -30,8 +30,8 @@ function ensureWorldArc(mem) {
       flags: {},
     },
     arc: mem?.arc
-      ? { coreQuestion: '', activeThreads: [], chapterPlan: null, ...mem.arc }
-      : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], chapterPlan: null },
+      ? { coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, ...mem.arc }
+      : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null },
   };
 }
 

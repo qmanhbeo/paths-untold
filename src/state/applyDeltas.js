@@ -79,8 +79,23 @@ export function applyDeltas(mem, out) {
       if (dArc.completedBeat) {
         plan.completedBeats = [...(plan.completedBeats ?? []), dArc.completedBeat];
       }
-      if (dArc.advanceArc === true && plan.currentArcIndex < plan.arcs.length - 1) {
+      // Legacy: advance within old arcs[] structure
+      if (dArc.advanceArc === true && Array.isArray(plan.arcs) && plan.currentArcIndex < plan.arcs.length - 1) {
         plan.currentArcIndex += 1;
+      }
+      // New: advance chapter stage (open → build → resolve → cooldown)
+      if (dArc.advanceChapterStage === true && Array.isArray(plan.chapterStageSequence)) {
+        if (plan.currentStageIndex < plan.chapterStageSequence.length - 1) {
+          plan.currentStageIndex += 1;
+        }
+      }
+    }
+
+    // Arc plan stage progression (open → build → peak → resolve)
+    const arcPlan = mem.arc.arcPlan;
+    if (arcPlan && dArc.advanceArcStage === true && Array.isArray(arcPlan.arcStageSequence)) {
+      if (arcPlan.currentStageIndex < arcPlan.arcStageSequence.length - 1) {
+        arcPlan.currentStageIndex += 1;
       }
     }
   }
