@@ -56,6 +56,7 @@ export function applyDeltas(mem, out) {
     if ((dArc.chapter ?? 0) > 0) {
       mem.arc.chapter = (mem.arc.chapter ?? 1) + 1;
       mem.arc.beat = 0;
+      mem.arc.chapterPlan = null; // null signals GameScreen to re-plan on next turn
     }
 
     // Arc direction — core question and active threads
@@ -63,13 +64,24 @@ export function applyDeltas(mem, out) {
     if (Array.isArray(dArc.addThreads) && dArc.addThreads.length) {
       const existing = new Set(mem.arc.activeThreads ?? []);
       for (const t of dArc.addThreads) existing.add(t);
-      mem.arc.activeThreads = Array.from(existing).slice(0, 5); // cap at 5
+      mem.arc.activeThreads = Array.from(existing).slice(0, 5);
     }
     if (Array.isArray(dArc.removeThreads) && dArc.removeThreads.length) {
       const dropping = new Set(dArc.removeThreads.map(s => s.toLowerCase()));
       mem.arc.activeThreads = (mem.arc.activeThreads ?? []).filter(
         t => !dropping.has(t.toLowerCase())
       );
+    }
+
+    // Chapter plan progression
+    const plan = mem.arc.chapterPlan;
+    if (plan) {
+      if (dArc.completedBeat) {
+        plan.completedBeats = [...(plan.completedBeats ?? []), dArc.completedBeat];
+      }
+      if (dArc.advanceArc === true && plan.currentArcIndex < plan.arcs.length - 1) {
+        plan.currentArcIndex += 1;
+      }
     }
   }
   

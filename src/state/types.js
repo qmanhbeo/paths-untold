@@ -66,6 +66,29 @@
  */
 
 /**
+ * @typedef {"quiet"|"unease"|"pressure"|"breaking_point"|"catastrophe"} TensionMode
+ */
+
+/**
+ * @typedef {{
+ *   arcGoal: string,
+ *   lesson: string,
+ *   tensionModes: TensionMode[],
+ *   requiredBeats: string[],
+ *   resolutionCondition: string
+ * }} ArcPlan
+ */
+
+/**
+ * @typedef {{
+ *   chapterTheme: string,
+ *   arcs: ArcPlan[],
+ *   currentArcIndex: number,
+ *   completedBeats: string[]
+ * }} ChapterPlan
+ */
+
+/**
  * @typedef {{
  *   sceneIndex: number,
  *   playerChoice: string,
@@ -90,7 +113,8 @@
  *     beat: number,
  *     tension: number,
  *     coreQuestion: string,
- *     activeThreads: string[]
+ *     activeThreads: string[],
+ *     chapterPlan: ChapterPlan|null
  *   }
  * }} GameMemory
  */

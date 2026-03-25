@@ -3,6 +3,7 @@ import { generateScene } from '../utils/AI-chat';
 import { createDebugLogger } from '../utils/debugLog';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildScenePrompt } from '../utils/buildUnifiedPrompt';
+import { planChapter } from '../utils/chapterPlanner';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 import {
@@ -44,7 +45,7 @@ const createFreshMemory = () => ({
     objectives: [],
     flags: {}
   },
-  arc: { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [] }
+  arc: { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], chapterPlan: null }
 });
 
 const ensureWorldArc = (mem) => ({
@@ -161,22 +162,30 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       setGameMemory(initialMemory);
       memoryRef.current = initialMemory;
       setIsLoading(true);
+      sceneGenerated.current = true;
 
-      const { system: openingSys, user: openingUser } = buildScenePrompt(initialMemory, '', { ...storyOptions, playerName });
-      const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
-      debug.log('[PROMPT 0]', openingUser);
+      (async () => {
+        // Plan the chapter before generating the first scene so scenes have direction.
+        const chapterPlan = await planChapter(storyOptions, initialMemory.arc, generateScene);
+        const memWithPlan = chapterPlan
+          ? { ...initialMemory, arc: { ...initialMemory.arc, chapterPlan } }
+          : initialMemory;
+        setGameMemory(memWithPlan);
+        memoryRef.current = memWithPlan;
 
-      generateScene(openingMessages, async (rawAI0) => {
+        const { system: openingSys, user: openingUser } = buildScenePrompt(memWithPlan, '', { ...storyOptions, playerName });
+        const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
+        debug.log('[PROMPT 0]', openingUser);
+
+        const rawAI0 = await generateScene(openingMessages);
         await handleSceneResponse(rawAI0, {
           choice: '',
           parentId: null,
           promptForNode: openingUser,
-          baseMemory: initialMemory
+          baseMemory: memWithPlan
         });
         setIsLoading(false);
-      });
-
-      sceneGenerated.current = true;
+      })();
     }
   }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -327,7 +336,18 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
     setIsLoading(true);
 
-    const baseMemory = createMemorySnapshot(memoryRef.current);
+    let baseMemory = createMemorySnapshot(memoryRef.current);
+
+    // Re-plan if a chapter just advanced (applyDeltas resets chapterPlan to null)
+    if (baseMemory.arc?.chapterPlan === null) {
+      const newPlan = await planChapter(storyOptions, baseMemory.arc, generateScene);
+      if (newPlan) {
+        baseMemory = { ...baseMemory, arc: { ...baseMemory.arc, chapterPlan: newPlan } };
+        setGameMemory(baseMemory);
+        memoryRef.current = baseMemory;
+      }
+    }
+
     const nextSceneIndex = (baseMemory.sceneIndex ?? 0) + 1;
     const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName });
     const branchMessages = [{ role: 'system', content: branchSys }, { role: 'user', content: branchUser }];
