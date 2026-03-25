@@ -43,7 +43,7 @@ const createFreshMemory = () => ({
     objectives: [],
     flags: {}
   },
-  arc: { chapter: 1, beat: 0, tension: 3 }
+  arc: { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [] }
 });
 
 const ensureWorldArc = (mem) => ({
@@ -55,7 +55,9 @@ const ensureWorldArc = (mem) => ({
     objectives: [],
     flags: {}
   },
-  arc: mem?.arc ?? { chapter: 1, beat: 0, tension: 3 }
+  arc: mem?.arc
+    ? { coreQuestion: '', activeThreads: [], ...mem.arc }
+    : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [] }
 });
 
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {

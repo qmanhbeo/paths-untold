@@ -73,7 +73,13 @@
  *   companions: Companion[],
  *   sceneIndex: number,
  *   world: WorldState,
- *   arc: { chapter: number, beat: number, tension: number }
+ *   arc: {
+ *     chapter: number,
+ *     beat: number,
+ *     tension: number,
+ *     coreQuestion: string,
+ *     activeThreads: string[]
+ *   }
  * }} GameMemory
  */
 

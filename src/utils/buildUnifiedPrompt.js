@@ -22,8 +22,12 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
       objectives: [],
       flags: {}
     },
-    arc = { chapter: 1, beat: 0, tension: 3 }
+    arc = { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [] }
   } = gameMemory;
+
+  // Derive narrative phase from tension (0–10 scale)
+  const tension = arc?.tension ?? 3;
+  const arcPhase = tension <= 3 ? 'opening' : tension <= 7 ? 'pressure' : 'convergence';
 
   const latestSummary = summary.at(-1) || '';
   const latestProse = prose.at(-1) || '';
@@ -45,7 +49,9 @@ World:
 - Time: Day ${world?.clock?.day ?? 1}, ${world?.clock?.time ?? 'day'}
 - SceneTags: ${(world?.sceneTags || []).join(', ') || '—'}
 - Objectives: ${(world?.objectives || []).map(o => `${o.status === 'active' ? '[•]' : '[ ]'} ${o.text}`).join(' | ') || '—'}
-- Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${arc?.tension ?? 3}/10
+- Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Phase: ${arcPhase}
+- Core Question: ${arc?.coreQuestion || '(not yet established — set via arcDelta.coreQuestion on the first scene)'}
+- Active Threads: ${(arc?.activeThreads || []).join(' | ') || '(none yet)'}
 `.trim();
 
   const playerName = playerIntro?.playerName || '';
@@ -71,6 +77,13 @@ RULES:
 - CHOICE TEXT LAW — The scene may be poetic. The choice must be decisive. Write paths as immediate actions, stances, or value expressions — not as mini-scene summaries or atmospheric blurbs. Target 2–8 words; 12 at most. Strong verbs preferred. Do not include decorative prose, predicted consequences, or atmospheric padding — the scene body already carries that weight; choice text carries decision clarity only. Preserve distinctiveness between options by varying action/value/risk, not by adding more words. Good: "Ask what she remembers" / "Touch the edge" / "Wait for a sign" / "Tell her the truth" / "Walk away". Bad: "Turn toward the baker and invite them to read a memory aloud, inviting soft candor to mingle with lilac and bread scent."
 - Paths MUST be rooted in the specific people, objects, and moments from the closing line of the prose. Never invent new locations or characters — only reference what already exists in the scene. Never describe an outcome or spoil a consequence.
 - CHOICE DIRECTOR: Before writing paths, evaluate whether this scene warrants player input at all, and what form it should take. Types: "paths" = the player picks from concrete options (1–4, prefer 2–3 over 4); "threshold" = a binary fork between two mutually exclusive stances — use when the moment demands a commitment (stay/leave, confess/deny, accept/refuse); "freetext" = the player speaks in their own words — use when they are answering a direct question, confessing something, writing a message, or expressing themselves to another character (set choiceDirector.prompt to the in-world question/invitation, leave paths=[]); "none" = no input needed — use for atmosphere, consequence, and transition scenes. Set choiceDirector.needed=false for "none". Never manufacture options just to fill a grid.
+- ARC PHASE: The story is currently in the "${arcPhase}" phase. Shape this scene accordingly:
+  opening (tension 0–3): establish tone, introduce threads, keep stakes low and curiosity high. Choices should feel exploratory (2–4 paths). Tension should gently rise or hold.
+  pressure (tension 4–7): escalate conflict, complicate relationships, force trade-offs. Choices should feel value-driven or binary (2–3 paths or threshold). At least one active thread should deepen.
+  convergence (tension 8–10): move toward resolution or revelation. Reduce branching, increase inevitability. Choices should feel decisive and weighty (1–2 paths, threshold, or none). Threads should resolve.
+  Every scene must either raise tension (arcDelta.tension: 1) or clarify the core question. Use arcDelta.tension: -1 only for earned relief after high-stakes moments.
+  Use arcDelta.addThreads to introduce new narrative threads (keep total under 5), arcDelta.removeThreads to resolve or drop them.
+  On the FIRST scene only (if coreQuestion is empty): set arcDelta.coreQuestion to the central dramatic question of this story — one sentence, framed as "Will you…" or "Can you…" or "What does it mean to…".
 - PLAYER IDENTITY: Do not ask for the player's name unless the scene creates a genuine narrative need — signing a document, being formally introduced, making a vow, giving testimony, being accused, or a relationship deepening to the point where a name is earned. If such a moment occurs AND the player name is unknown, set identityRequirement.required = true with a short in-world promptText (the NPC's exact words, written as spoken dialogue, not a game instruction). Do NOT trigger this in ordinary scenes or early in the story.
 - Keep character updates compact but useful.
 
@@ -116,7 +129,14 @@ OUTPUT SHAPE (STRICT JSON):
       "status": "active"
     }
   ],
-  "arcDelta": { "tension": 0, "beat": 0, "chapter": 0 },
+  "arcDelta": {
+    "tension": 0,
+    "beat": 0,
+    "chapter": 0,
+    "coreQuestion": "",
+    "addThreads": [],
+    "removeThreads": []
+  },
   "choiceDirector": {
     "needed": true,
     "type": "paths | threshold | freetext | none",

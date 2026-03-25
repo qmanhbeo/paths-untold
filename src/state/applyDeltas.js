@@ -57,6 +57,20 @@ export function applyDeltas(mem, out) {
       mem.arc.chapter = (mem.arc.chapter ?? 1) + 1;
       mem.arc.beat = 0;
     }
+
+    // Arc direction — core question and active threads
+    if (dArc.coreQuestion) mem.arc.coreQuestion = dArc.coreQuestion;
+    if (Array.isArray(dArc.addThreads) && dArc.addThreads.length) {
+      const existing = new Set(mem.arc.activeThreads ?? []);
+      for (const t of dArc.addThreads) existing.add(t);
+      mem.arc.activeThreads = Array.from(existing).slice(0, 5); // cap at 5
+    }
+    if (Array.isArray(dArc.removeThreads) && dArc.removeThreads.length) {
+      const dropping = new Set(dArc.removeThreads.map(s => s.toLowerCase()));
+      mem.arc.activeThreads = (mem.arc.activeThreads ?? []).filter(
+        t => !dropping.has(t.toLowerCase())
+      );
+    }
   }
   
   /* ----------------- helpers ----------------- */
