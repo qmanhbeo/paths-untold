@@ -26,7 +26,11 @@ export function migrateMemory(raw) {
       coreQuestion: rawArc.coreQuestion ?? '',
       activeThreads: Array.isArray(rawArc.activeThreads) ? rawArc.activeThreads : [],
       arcPlan: rawArc.arcPlan ?? null,
-      chapterPlan: rawArc.chapterPlan ?? null
+      chapterPlan: rawArc.chapterPlan ?? null,
+      // Narrative Master runtime state — initialize safely from old saves
+      narrativeMaster: rawArc.narrativeMaster && Array.isArray(rawArc.narrativeMaster.recentModules)
+        ? rawArc.narrativeMaster
+        : { recentModules: [] }
     };
 
     // Handle both old field names (story/choices/currentScene) and new (prose/paths/sceneIndex)

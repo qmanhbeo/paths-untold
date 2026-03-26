@@ -60,8 +60,8 @@ const ensureWorldArc = (mem) => ({
     flags: {}
   },
   arc: mem?.arc
-    ? { coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, ...mem.arc }
-    : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null }
+    ? { coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, narrativeMaster: { recentModules: [] }, ...mem.arc }
+    : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, narrativeMaster: { recentModules: [] } }
 });
 
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
@@ -87,8 +87,12 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const storyBoxRef = useRef(null);
   const sceneGenerated = useRef(false);
   const playerNameRef = useRef(storyOptions?.playerName || '');
-  // Narrative Master: tracks recent module usage for rhythm/variety routing (V1: not persisted)
-  const narrativeMasterRef = useRef({ recentModules: [] });
+  // Narrative Master: recent module usage for rhythm routing; initialized from save if resuming
+  const narrativeMasterRef = useRef(
+    storyOptions?.resumeFromSave && storyOptions.memory?.arc?.narrativeMaster
+      ? storyOptions.memory.arc.narrativeMaster
+      : { recentModules: [] }
+  );
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -399,10 +403,15 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
   const confirmSave = () => {
     const normalizedGraph = normalizeNarrativeGraph(narrativeGraph);
+    // Persist current Narrative Master module history into saved memory
+    const memoryToSave = {
+      ...gameMemory,
+      arc: { ...gameMemory.arc, narrativeMaster: narrativeMasterRef.current }
+    };
 
     saveGameToSlot(selectedSlot, {
       options: { ...storyOptions, prompt, resumeFromSave: true, playerName },
-      memory: gameMemory,
+      memory: memoryToSave,
       ui: {
         displayedStory: segments.map((segment) => segment.html).join(''),
         displayedPaths,

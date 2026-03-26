@@ -10,12 +10,150 @@ import {
 } from './StartScreenComponents';
 import backgroundImage from '../images/background-black.jpg';
 
+const DEFAULT_NARRATIVE_SETTINGS = {
+  pacing: 'medium',
+  emotionalIntensity: 3,
+  mysteryLevel: 3,
+  romanceSoftness: 3,
+  choiceHarshness: 3,
+  introspectionLevel: 3,
+  ambiguityTolerance: 3,
+  convergenceSharpness: 3,
+};
+
+// Compact 3-option selector used by the narrative settings page
+const TriSelector = ({ label, hint, options, value, onChange }) => (
+  <div className="flex flex-col gap-1">
+    <span className="text-white text-sm font-semibold">{label}</span>
+    {hint && <span className="text-white/50 text-xs leading-tight">{hint}</span>}
+    <div className="flex gap-1 mt-0.5">
+      {options.map(opt => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 text-xs py-1.5 px-1 rounded transition-colors border ${
+            value === opt.value
+              ? 'bg-blue-600 border-blue-400 text-white font-semibold'
+              : 'bg-white/10 border-white/20 text-white/70 hover:bg-white/20'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+const NarrativeSettingsPage = ({ settings, onChange }) => {
+  const set = (key, val) => onChange({ ...settings, [key]: val });
+
+  return (
+    <div className="text-white space-y-1">
+      <p className="text-white/60 text-xs mb-3">
+        These shape how the story feels — not what happens, but how it unfolds.
+      </p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <TriSelector
+          label="Pacing"
+          hint="How fast the story moves"
+          options={[
+            { label: 'Deliberate', value: 'slow' },
+            { label: 'Balanced', value: 'medium' },
+            { label: 'Driven', value: 'fast' },
+          ]}
+          value={settings.pacing}
+          onChange={v => set('pacing', v)}
+        />
+        <TriSelector
+          label="Emotional Depth"
+          hint="Weight of emotional moments"
+          options={[
+            { label: 'Gentle', value: 1 },
+            { label: 'Moderate', value: 3 },
+            { label: 'Intense', value: 5 },
+          ]}
+          value={settings.emotionalIntensity}
+          onChange={v => set('emotionalIntensity', v)}
+        />
+        <TriSelector
+          label="Mystery Level"
+          hint="How much stays unexplained"
+          options={[
+            { label: 'Clear', value: 1 },
+            { label: 'Layered', value: 3 },
+            { label: 'Cryptic', value: 5 },
+          ]}
+          value={settings.mysteryLevel}
+          onChange={v => set('mysteryLevel', v)}
+        />
+        <TriSelector
+          label="Romance"
+          hint="Intimacy and romantic tension"
+          options={[
+            { label: 'Minimal', value: 1 },
+            { label: 'Moderate', value: 3 },
+            { label: 'Forward', value: 5 },
+          ]}
+          value={settings.romanceSoftness}
+          onChange={v => set('romanceSoftness', v)}
+        />
+        <TriSelector
+          label="Choice Weight"
+          hint="How costly your decisions are"
+          options={[
+            { label: 'Forgiving', value: 1 },
+            { label: 'Balanced', value: 3 },
+            { label: 'Unforgiving', value: 5 },
+          ]}
+          value={settings.choiceHarshness}
+          onChange={v => set('choiceHarshness', v)}
+        />
+        <TriSelector
+          label="Reflection"
+          hint="Space to sit with what happened"
+          options={[
+            { label: 'Active', value: 1 },
+            { label: 'Balanced', value: 3 },
+            { label: 'Introspective', value: 5 },
+          ]}
+          value={settings.introspectionLevel}
+          onChange={v => set('introspectionLevel', v)}
+        />
+        <TriSelector
+          label="Ambiguity"
+          hint="How much stays unresolved"
+          options={[
+            { label: 'Resolved', value: 1 },
+            { label: 'Balanced', value: 3 },
+            { label: 'Open', value: 5 },
+          ]}
+          value={settings.ambiguityTolerance}
+          onChange={v => set('ambiguityTolerance', v)}
+        />
+        <TriSelector
+          label="Convergence"
+          hint="How forcefully arcs close"
+          options={[
+            { label: 'Gradual', value: 1 },
+            { label: 'Balanced', value: 3 },
+            { label: 'Sharp', value: 5 },
+          ]}
+          value={settings.convergenceSharpness}
+          onChange={v => set('convergenceSharpness', v)}
+        />
+      </div>
+    </div>
+  );
+};
+
 const StartScreen = ({ onStart, onBackToMenu }) => {
   const [selectedGenres, setSelectedGenres] = useState([]);
   const [selectedTone, setSelectedTone] = useState([]);
   const [selectedProtagonists, setSelectedProtagonists] = useState([]);
   const [selectedSetting, setSelectedSetting] = useState([]);
   const [selectedGender, setSelectedGender] = useState([]);
+  const [narrativeSettings, setNarrativeSettings] = useState(DEFAULT_NARRATIVE_SETTINGS);
   const [currentPage, setCurrentPage] = useState(0);
   const [customGenre, setCustomGenre] = useState('');
   const [customTone, setCustomTone] = useState('');
@@ -27,7 +165,7 @@ const StartScreen = ({ onStart, onBackToMenu }) => {
     {
       title: "Select Genres",
       content: (
-        <GenreChoice 
+        <GenreChoice
           selectedGenres={selectedGenres}
           setSelectedGenres={setSelectedGenres}
           customGenre={customGenre}
@@ -38,7 +176,7 @@ const StartScreen = ({ onStart, onBackToMenu }) => {
     {
       title: "Select Tone/Mood",
       content: (
-        <ToneChoice 
+        <ToneChoice
           selectedTone={selectedTone}
           setSelectedTone={setSelectedTone}
           customTone={customTone}
@@ -49,7 +187,7 @@ const StartScreen = ({ onStart, onBackToMenu }) => {
     {
       title: "Select Setting",
       content: (
-        <SettingChoice 
+        <SettingChoice
           selectedSetting={selectedSetting}
           setSelectedSetting={setSelectedSetting}
           customSetting={customSetting}
@@ -60,7 +198,7 @@ const StartScreen = ({ onStart, onBackToMenu }) => {
     {
       title: "Select Protagonist Role",
       content: (
-        <ProtagonistChoice 
+        <ProtagonistChoice
           selectedProtagonists={selectedProtagonists}
           setSelectedProtagonists={setSelectedProtagonists}
           customProtagonist={customProtagonist}
@@ -71,11 +209,20 @@ const StartScreen = ({ onStart, onBackToMenu }) => {
     {
       title: "Select Gender",
       content: (
-        <GenderChoice 
+        <GenderChoice
           selectedGender={selectedGender}
           setSelectedGender={setSelectedGender}
           customGender={customGender}
           setCustomGender={setCustomGender}
+        />
+      ),
+    },
+    {
+      title: "Narrative Preferences",
+      content: (
+        <NarrativeSettingsPage
+          settings={narrativeSettings}
+          onChange={setNarrativeSettings}
         />
       ),
     },
@@ -104,25 +251,25 @@ const StartScreen = ({ onStart, onBackToMenu }) => {
 
     const prompt = `You are an interactive story generator. Your task is to create an engaging, second-person narrative experience shaped entirely by the following player-defined values:
 
-- Genre: ${genreValue}  
-- Protagonist Role: ${protagonistValue}  
-- Protagonist Gender: ${genderValue}  
-- Tone: ${toneValue}  
+- Genre: ${genreValue}
+- Protagonist Role: ${protagonistValue}
+- Protagonist Gender: ${genderValue}
+- Tone: ${toneValue}
 - Setting: ${settingValue}
 
 These values are **core to the story**. Every detail—setting, characters, tone, pacing, and conflict—must reflect and reinforce them throughout the narrative.
 
-The player should **not already know the world**. The story must unfold through **exploration, inspection, and dialogue**. Let the world reveal itself gradually through what the protagonist notices, questions, or hears from others. Avoid exposition dumps—show, don’t tell.
+The player should **not already know the world**. The story must unfold through **exploration, inspection, and dialogue**. Let the world reveal itself gradually through what the protagonist notices, questions, or hears from others. Avoid exposition dumps—show, don't tell.
 
 Start with a captivating and imaginative story **title** that reflects the essence of the journey ahead.
 
 Then, immediately dive into the narrative, written in the second person ("you"). Begin with a **strong hook**—a moment of intrigue, danger, beauty, or confusion. Make the player curious. Describe the setting vividly and let the tone come through naturally in how the world feels and how people behave.
 Introduce an NPC friend
 After building this short opening scene (2-3 SHORT PARAGRAPHS), present the player with **four distinct choices**. Each choice must:
-- Reflect different ways of thinking, feeling, or acting  
-- Invite further discovery or shift the story meaningfully  
-- Not be obvious or easy—force the player to make a **difficult, interesting decision**  
-- Avoid clichés or “safe” options. Make each choice matter.
+- Reflect different ways of thinking, feeling, or acting
+- Invite further discovery or shift the story meaningfully
+- Not be obvious or easy—force the player to make a **difficult, interesting decision**
+- Avoid clichés or "safe" options. Make each choice matter.
 
 Use **frequent line breaks** for dynamic pacing and enhanced readability. Keep the story immersive, surprising, and grounded in the player's evolving perspective.
 
@@ -132,7 +279,7 @@ Respond with **ONLY valid JSON** in this structure:
 {
   "title": "title",
 
-  "story": "Start with a rewrite of the player’s last choice (dialogue or action). Then continue with vivid prose in 2–3 short paragraphs.",
+  "story": "Start with a rewrite of the player's last choice (dialogue or action). Then continue with vivid prose in 2–3 short paragraphs.",
 
   "choices": [
     "....",
@@ -170,7 +317,7 @@ Respond with **ONLY valid JSON** in this structure:
 
 🚫 Do NOT include any explanation, commentary, or formatting outside the JSON.`;
 
-    onStart({ prompt, selectedGenres, selectedTone, selectedProtagonists, selectedSetting, selectedGender });
+    onStart({ prompt, selectedGenres, selectedTone, selectedProtagonists, selectedSetting, selectedGender, ...narrativeSettings });
   };
 
   const handleNext = () => {
