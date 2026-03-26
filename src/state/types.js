@@ -97,6 +97,64 @@
  * }} ChapterPlan
  */
 
+/** @typedef {"open"|"build"|"resolve"|"cooldown"} WaveRole */
+
+/**
+ * Target narrative values for a blueprint node.
+ * @typedef {{
+ *   tension: number,
+ *   intimacy: number,
+ *   mystery: number,
+ *   choiceHarshness: number,
+ *   pacing: "slow"|"medium"|"fast",
+ *   revelation: number
+ * }} NarrativeTargets
+ */
+
+/**
+ * A tension axis that structures the story's central conflict.
+ * @typedef {{ id: string, left: string, right: string }} TensionAxis
+ */
+
+/**
+ * Pre-planned chapter node inside a BlueprintArc.
+ * sceneWave encodes the per-scene wave roles for the chapter.
+ * @typedef {{
+ *   id: string,
+ *   waveRole: WaveRole,
+ *   purpose: string,
+ *   mustResolve: string,
+ *   targets: NarrativeTargets,
+ *   sceneWave: WaveRole[],
+ *   currentSceneIndex: number
+ * }} BlueprintChapter
+ */
+
+/**
+ * Pre-planned arc node inside a StoryBlueprint.
+ * @typedef {{
+ *   id: string,
+ *   waveRole: WaveRole,
+ *   purpose: string,
+ *   focusAxis: string,
+ *   targets: NarrativeTargets,
+ *   currentChapterIndex: number,
+ *   chapters: BlueprintChapter[]
+ * }} BlueprintArc
+ */
+
+/**
+ * The full Story Blueprint generated once at game initialization.
+ * Encodes the nested wave structure: story → arcs → chapters → scenes.
+ * @typedef {{
+ *   coreQuestion: string,
+ *   storyIdentity: string,
+ *   tensionAxes: TensionAxis[],
+ *   currentArcIndex: number,
+ *   arcs: BlueprintArc[]
+ * }} StoryBlueprint
+ */
+
 /**
  * @typedef {{
  *   sceneIndex: number,
@@ -124,7 +182,8 @@
  *     coreQuestion: string,
  *     activeThreads: string[],
  *     arcPlan: ArcPlan|null,
- *     chapterPlan: ChapterPlan|null
+ *     chapterPlan: ChapterPlan|null,
+ *     storyBlueprint: StoryBlueprint|null
  *   }
  * }} GameMemory
  */

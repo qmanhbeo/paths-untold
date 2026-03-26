@@ -26,7 +26,8 @@ export function migrateMemory(raw) {
       coreQuestion: rawArc.coreQuestion ?? '',
       activeThreads: Array.isArray(rawArc.activeThreads) ? rawArc.activeThreads : [],
       arcPlan: rawArc.arcPlan ?? null,
-      chapterPlan: rawArc.chapterPlan ?? null
+      chapterPlan: rawArc.chapterPlan ?? null,
+      storyBlueprint: rawArc.storyBlueprint ?? null
     };
 
     // Handle both old field names (story/choices/currentScene) and new (prose/paths/sceneIndex)
