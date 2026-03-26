@@ -364,6 +364,11 @@ export function composePlannerBundle(selectedModules, gameMemory, playerSettings
   const tension = gameMemory.arc?.tension ?? 3;
   const chapterPlan = gameMemory.arc?.chapterPlan;
   const phase = getCurrentPhase(gameMemory, settings);
+  const storyBlueprint = gameMemory?.storyBlueprint ?? null;
+
+  // Active tension axis from blueprint (label it in pressure descriptions)
+  const primaryAxis = storyBlueprint?.tensionAxes?.[0];
+  const axisLabel = primaryAxis ? ` [${primaryAxis.left}↔${primaryAxis.right}]` : '';
 
   // Scene purpose: derived from modules' narrative functions
   const fnLabels = {
@@ -385,11 +390,11 @@ export function composePlannerBundle(selectedModules, gameMemory, playerSettings
   const dominantPace = selectedModules[0]?.pace ?? 'medium';
   const emotionalShape = `${emotionalModes.join(' → ')} (${dominantPace} build)`;
 
-  // Narrative pressure description
+  // Narrative pressure — annotated with active tension axis if available
   const narrativePressure =
-    tension >= 7 ? 'high — something must commit or break this scene' :
-    tension >= 4 ? 'moderate — deepen at least one thread or relationship' :
-    'low — establish and introduce without forcing confrontation';
+    tension >= 7 ? `high — something must commit or break${axisLabel}` :
+    tension >= 4 ? `moderate — deepen at least one thread or relationship${axisLabel}` :
+    `low — establish and introduce without forcing confrontation${axisLabel}`;
 
   // Key contradiction: lead instruction from first module
   const keyContradiction = selectedModules[0]?.instruction ?? '';
@@ -419,6 +424,10 @@ export function composePlannerBundle(selectedModules, gameMemory, playerSettings
   if (phase === 'convergence') thingsToAvoid.push('do not defer — choices must move things forward');
   if (selectedModules.some(m => m.id === 'false_relief')) {
     thingsToAvoid.push('do not fully resolve underlying tension this scene');
+  }
+  // Blueprint failure condition as a convergence guardrail
+  if (phase === 'convergence' && storyBlueprint?.endingLogic?.failure) {
+    thingsToAvoid.push(`avoid hollow closure: "${storyBlueprint.endingLogic.failure}"`);
   }
 
   return {

@@ -109,6 +109,18 @@
  */
 
 /**
+ * Story Blueprint — the philosophical spine of the whole story.
+ * Generated once by storyPlanner before arc planning.
+ * @typedef {{
+ *   coreQuestion: string,
+ *   tensionAxes: Array<{ id: string, left: string, right: string }>,
+ *   storyIdentity: { dominantTone: string, worldEthos: string, choiceEthos: string },
+ *   arcPrinciples: string[],
+ *   endingLogic: { ideal: string, failure: string }
+ * }} StoryBlueprint
+ */
+
+/**
  * @typedef {{
  *   prose: string[],
  *   paths: string[],
@@ -124,8 +136,10 @@
  *     coreQuestion: string,
  *     activeThreads: string[],
  *     arcPlan: ArcPlan|null,
- *     chapterPlan: ChapterPlan|null
- *   }
+ *     chapterPlan: ChapterPlan|null,
+ *     narrativeMaster: { recentModules: string[] }
+ *   },
+ *   storyBlueprint: StoryBlueprint|null
  * }} GameMemory
  */
 

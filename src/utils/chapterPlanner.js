@@ -8,12 +8,25 @@ const PLANNER_SYSTEM = `You are a narrative architect for an interactive story g
 
 // ─── Arc planner ────────────────────────────────────────────────────────────
 
-function buildArcPlannerPrompt(playerIntro) {
+function buildArcPlannerPrompt(playerIntro, storyBlueprint) {
+  const blueprintBlock = storyBlueprint
+    ? `\nStory Blueprint (the philosophical core this arc must serve):
+- Core Question: ${storyBlueprint.coreQuestion}
+- Tension Axes: ${storyBlueprint.tensionAxes.map(a => `${a.left} ↔ ${a.right}`).join(' | ')}
+- World Ethos: ${storyBlueprint.storyIdentity.worldEthos}
+- Choice Ethos: ${storyBlueprint.storyIdentity.choiceEthos}
+${storyBlueprint.arcPrinciples.length ? `- Arc Principles: ${storyBlueprint.arcPrinciples.join('; ')}` : ''}
+- True Resolution: ${storyBlueprint.endingLogic.ideal}
+
+This arc must stress at least one tension axis, serve the core question, and follow the arc principles.`
+    : '';
+
   return `Player setup:
 - Genre: ${playerIntro?.selectedGenres?.join(', ') || 'unspecified'}
 - Protagonist: ${playerIntro?.selectedProtagonists?.join(', ') || 'unspecified'}
 - Tone: ${playerIntro?.selectedTone?.join(', ') || 'unspecified'}
 - Setting: ${playerIntro?.selectedSetting?.join(', ') || 'unspecified'}
+${blueprintBlock}
 
 Design the macro arc for this story. This structure spans multiple chapters and gives the whole story its shape.
 
@@ -56,11 +69,12 @@ function normalizeArcPlan(raw) {
  *
  * @param {object} playerIntro - storyOptions
  * @param {Function} generateFn - generateScene from AI-chat (accepts messages array)
+ * @param {import('../state/types').StoryBlueprint|null} storyBlueprint - optional philosophical frame
  * @returns {Promise<import('../state/types').ArcPlan|null>}
  */
-export async function planArc(playerIntro, generateFn) {
+export async function planArc(playerIntro, generateFn, storyBlueprint = null) {
   try {
-    const user = buildArcPlannerPrompt(playerIntro);
+    const user = buildArcPlannerPrompt(playerIntro, storyBlueprint);
     const raw = await generateFn([
       { role: 'system', content: PLANNER_SYSTEM },
       { role: 'user', content: user },
@@ -84,14 +98,24 @@ export async function planArc(playerIntro, generateFn) {
  * Build { system, user } for the chapter planner LLM call.
  * @param {object} playerIntro
  * @param {object} arc - current arc state (may include arcPlan)
+ * @param {import('../state/types').StoryBlueprint|null} storyBlueprint
  */
-export function buildPlannerPrompt(playerIntro, arc) {
+export function buildPlannerPrompt(playerIntro, arc, storyBlueprint = null) {
   const chapter = arc?.chapter ?? 1;
   const arcPlan = arc?.arcPlan ?? null;
   const arcStage = arcPlan
     ? (arcPlan.arcStageSequence[arcPlan.currentStageIndex] ?? 'open')
     : 'open';
-  const coreQuestion = arc?.coreQuestion || arcPlan?.arcQuestion || '';
+  const coreQuestion = arc?.coreQuestion || arcPlan?.arcQuestion || storyBlueprint?.coreQuestion || '';
+
+  const blueprintBlock = storyBlueprint
+    ? `\nStory Blueprint:
+- Core Question: ${storyBlueprint.coreQuestion}
+- Primary Tension: ${storyBlueprint.tensionAxes[0] ? `${storyBlueprint.tensionAxes[0].left} ↔ ${storyBlueprint.tensionAxes[0].right}` : '—'}
+- World Ethos: ${storyBlueprint.storyIdentity.worldEthos}
+- Choice Ethos: ${storyBlueprint.storyIdentity.choiceEthos}
+${storyBlueprint.arcPrinciples.length ? `- Arc Principles: ${storyBlueprint.arcPrinciples.join('; ')}` : ''}`
+    : '';
 
   const user = `Player setup:
 - Genre: ${playerIntro?.selectedGenres?.join(', ') || 'unspecified'}
@@ -102,6 +126,7 @@ ${coreQuestion ? `- Core Question: ${coreQuestion}` : ''}
 ${arcPlan ? `- Arc Goal: ${arcPlan.arcGoal}
 - Arc Theme: ${arcPlan.arcTheme}
 - Arc Stage: ${arcStage} (stage ${arcPlan.currentStageIndex + 1} of ${arcPlan.arcStageSequence.length})` : ''}
+${blueprintBlock}
 
 Plan Chapter ${chapter} of this story.
 
@@ -150,11 +175,12 @@ function normalizeChapterPlan(raw) {
  * @param {object} playerIntro - storyOptions
  * @param {object} arc - current arc state
  * @param {Function} generateFn - generateScene from AI-chat (accepts messages array)
+ * @param {import('../state/types').StoryBlueprint|null} storyBlueprint - optional philosophical frame
  * @returns {Promise<import('../state/types').ChapterPlan|null>}
  */
-export async function planChapter(playerIntro, arc, generateFn) {
+export async function planChapter(playerIntro, arc, generateFn, storyBlueprint = null) {
   try {
-    const { system, user } = buildPlannerPrompt(playerIntro, arc);
+    const { system, user } = buildPlannerPrompt(playerIntro, arc, storyBlueprint);
     const raw = await generateFn([
       { role: 'system', content: system },
       { role: 'user', content: user },

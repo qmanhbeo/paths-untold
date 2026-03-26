@@ -136,9 +136,15 @@ LENGTH — 80–120 words maximum. 2–3 paragraphs, ≤ 2 sentences each. Do no
     : `Continue. Player chose: "${latestChoice}".
 Show the consequence immediately — action, dialogue, or revelation. No atmospheric preamble. Something must change. Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only in NPC dialogue or direct address. Narration stays second-person.` : ''}`;
 
+  // ── Story blueprint (top-level philosophical frame) ────────────────────────
+  const storyBlueprint = gameMemory?.storyBlueprint ?? null;
+  const blueprintDirectionBlock = storyBlueprint
+    ? `\n  Story Philosophy: ${storyBlueprint.coreQuestion}\n  Active Tensions: ${storyBlueprint.tensionAxes.map(a => `${a.left}↔${a.right}`).join(' | ')}\n  World Law: ${storyBlueprint.storyIdentity.worldEthos}`
+    : '';
+
   // ── System prompt ──────────────────────────────────────────────────────────
   const arcDirectionBlock = chapterPlan
-    ? `
+    ? `${blueprintDirectionBlock}
   Arc Stage: ${arcStageLabel}${arcPlan ? `\n  Arc Goal: ${arcPlan.arcGoal}\n  Arc Theme: ${arcPlan.arcTheme}` : ''}
   Chapter Stage: ${chapterStageLabel}
   Chapter Goal: ${chapterPlan.chapterGoal || '—'}
@@ -148,7 +154,7 @@ Show the consequence immediately — action, dialogue, or revelation. No atmosph
   This scene must either deepen the must-resolve tension OR push toward the chapter completion condition.
   If chapter completion is reached, set arcDelta.advanceChapterStage: true to move to the next stage.
   If the arc resolution condition is met, set arcDelta.advanceArcStage: true.`
-    : `
+    : `${blueprintDirectionBlock}
   No chapter plan yet. On the first scene: set arcDelta.coreQuestion to the central dramatic question of this story ("Will you…" / "Can you…" / "What does it mean to…"). Introduce one or two narrative threads via arcDelta.addThreads.`;
 
   const system = `You are a state-driven narrative engine for a branching story game. Write like a game, not a novel — direct, clear, fast.
