@@ -8,8 +8,9 @@ import { injectPhaseOutLogicIntoPrompt } from './phaseOutManager';
  * @param {object} gameMemory
  * @param {string} latestChoice
  * @param {object|null} playerIntro
+ * @param {string|null} narrativeMasterPrompt - compact instruction block from the Narrative Master
  */
-export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) => {
+export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null, narrativeMasterPrompt = null) => {
   const {
     prose = [],
     sceneLog = [],
@@ -256,6 +257,10 @@ OUTPUT SHAPE (STRICT JSON):
   }
 }`.trim();
 
+  const narrativeMasterBlock = narrativeMasterPrompt
+    ? `\n${narrativeMasterPrompt}\n`
+    : '';
+
   const user = `${worldBlock}
 
 Companions (active):
@@ -268,7 +273,7 @@ Player's Choice:
 ${latestChoice || '(story begins)'}
 
 ${phaseOutPromptExtras}
-
+${narrativeMasterBlock}
 TASK:
 ${taskBlock}`.trim();
 

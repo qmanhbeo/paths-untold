@@ -4,6 +4,7 @@ import { createDebugLogger } from '../utils/debugLog';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildScenePrompt } from '../utils/buildUnifiedPrompt';
 import { planArc, planChapter } from '../utils/chapterPlanner';
+import { runNarrativeMaster } from '../narrative/narrativeMaster';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 import {
@@ -86,6 +87,8 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const storyBoxRef = useRef(null);
   const sceneGenerated = useRef(false);
   const playerNameRef = useRef(storyOptions?.playerName || '');
+  // Narrative Master: tracks recent module usage for rhythm/variety routing (V1: not persisted)
+  const narrativeMasterRef = useRef({ recentModules: [] });
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -178,7 +181,8 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         setGameMemory(memWithPlan);
         memoryRef.current = memWithPlan;
 
-        const { system: openingSys, user: openingUser } = buildScenePrompt(memWithPlan, '', { ...storyOptions, playerName });
+        const nmOpening = runNarrativeMaster(memWithPlan, storyOptions, narrativeMasterRef.current.recentModules);
+        const { system: openingSys, user: openingUser } = buildScenePrompt(memWithPlan, '', { ...storyOptions, playerName }, nmOpening.renderedPrompt);
         const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
         debug.log('[PROMPT 0]', openingUser);
 
@@ -189,6 +193,9 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           promptForNode: openingUser,
           baseMemory: memWithPlan
         });
+        if (nmOpening.bundle?.selectedModuleIds?.length) {
+          narrativeMasterRef.current = { recentModules: nmOpening.bundle.selectedModuleIds };
+        }
         setIsLoading(false);
       })();
     }
@@ -354,7 +361,8 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     }
 
     const nextSceneIndex = (baseMemory.sceneIndex ?? 0) + 1;
-    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName });
+    const nmResult = runNarrativeMaster(baseMemory, storyOptions, narrativeMasterRef.current.recentModules);
+    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName }, nmResult.renderedPrompt);
     const branchMessages = [{ role: 'system', content: branchSys }, { role: 'user', content: branchUser }];
 
     debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchUser);
@@ -367,6 +375,14 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         promptForNode: branchUser,
         baseMemory
       });
+      if (nmResult.bundle?.selectedModuleIds?.length) {
+        narrativeMasterRef.current = {
+          recentModules: [
+            ...narrativeMasterRef.current.recentModules.slice(-7),
+            ...nmResult.bundle.selectedModuleIds,
+          ],
+        };
+      }
       setIsLoading(false);
     });
   };
