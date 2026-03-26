@@ -3,7 +3,8 @@ import { generateScene } from '../utils/AI-chat';
 import { createDebugLogger } from '../utils/debugLog';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildScenePrompt } from '../utils/buildUnifiedPrompt';
-import { planArc, planChapter } from '../utils/chapterPlanner';
+import { planStoryBlueprint } from '../utils/storyBlueprintPlanner';
+import { planChapter } from '../utils/chapterPlanner';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 import {
@@ -45,7 +46,7 @@ const createFreshMemory = () => ({
     objectives: [],
     flags: {}
   },
-  arc: { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null }
+  arc: { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, storyBlueprint: null }
 });
 
 const ensureWorldArc = (mem) => ({
@@ -59,8 +60,8 @@ const ensureWorldArc = (mem) => ({
     flags: {}
   },
   arc: mem?.arc
-    ? { coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, ...mem.arc }
-    : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null }
+    ? { coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, storyBlueprint: null, ...mem.arc }
+    : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, storyBlueprint: null }
 });
 
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
@@ -165,16 +166,23 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       sceneGenerated.current = true;
 
       (async () => {
-        // Plan the full arc first (macro shape), then the opening chapter (micro shape).
-        const arcPlan = await planArc(storyOptions, generateScene);
-        const arcWithMacro = arcPlan
-          ? { ...initialMemory.arc, arcPlan }
-          : initialMemory.arc;
-
-        const chapterPlan = await planChapter(storyOptions, arcWithMacro, generateScene);
-        const memWithPlan = (arcPlan || chapterPlan)
-          ? { ...initialMemory, arc: { ...arcWithMacro, chapterPlan: chapterPlan ?? null } }
-          : initialMemory;
+        // Master Planner: one initialization call that generates the full Story Blueprint
+        // (nested wave structure: story → arcs → chapters → scenes).
+        // Falls back to the legacy planChapter() call if the blueprint fails.
+        const storyBlueprint = await planStoryBlueprint(storyOptions, generateScene);
+        let memWithPlan;
+        if (storyBlueprint) {
+          memWithPlan = {
+            ...initialMemory,
+            arc: { ...initialMemory.arc, storyBlueprint }
+          };
+        } else {
+          // Fallback: legacy per-chapter planning
+          const chapterPlan = await planChapter(storyOptions, initialMemory.arc, generateScene);
+          memWithPlan = chapterPlan
+            ? { ...initialMemory, arc: { ...initialMemory.arc, chapterPlan } }
+            : initialMemory;
+        }
         setGameMemory(memWithPlan);
         memoryRef.current = memWithPlan;
 
@@ -343,8 +351,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
     let baseMemory = createMemorySnapshot(memoryRef.current);
 
-    // Re-plan chapter if a chapter just advanced (applyDeltas resets chapterPlan to null)
-    if (baseMemory.arc?.chapterPlan === null) {
+    // Re-plan chapter only when running without a Story Blueprint (legacy fallback or old save).
+    // When a blueprint is present, chapter transitions are handled automatically by
+    // applyDeltas advancing the blueprint position — no extra LLM call needed.
+    if (!baseMemory.arc?.storyBlueprint && baseMemory.arc?.chapterPlan === null) {
       const newChapterPlan = await planChapter(storyOptions, baseMemory.arc, generateScene);
       if (newChapterPlan) {
         baseMemory = { ...baseMemory, arc: { ...baseMemory.arc, chapterPlan: newChapterPlan } };

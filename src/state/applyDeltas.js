@@ -53,7 +53,15 @@ export function applyDeltas(mem, out) {
     const dArc = out.arcDelta || {};
     mem.arc.tension = clamp((mem.arc.tension ?? 3) + (dArc.tension ?? 0), 0, 10);
     mem.arc.beat = (mem.arc.beat ?? 0) + (dArc.beat ?? 0);
-    if ((dArc.chapter ?? 0) > 0) {
+
+    // Story Blueprint: auto-advance scene → chapter → arc position every scene.
+    // When a blueprint is active this replaces the LLM-driven chapter re-planning:
+    // the pre-planned wave structure drives pacing; no extra planning LLM call is made.
+    const blueprint = mem.arc.storyBlueprint;
+    if (blueprint) {
+      advanceBlueprintPosition(blueprint, mem);
+    } else if ((dArc.chapter ?? 0) > 0) {
+      // Legacy (no blueprint): LLM signal drives chapter advancement
       mem.arc.chapter = (mem.arc.chapter ?? 1) + 1;
       mem.arc.beat = 0;
       mem.arc.chapterPlan = null; // null signals GameScreen to re-plan on next turn
@@ -100,6 +108,44 @@ export function applyDeltas(mem, out) {
     }
   }
   
+  /* ----------------- blueprint helpers ----------------- */
+
+  /**
+   * Advance the Story Blueprint's position by one scene.
+   * Cascades: scene exhausted → advance chapter → arc exhausted → advance arc.
+   * Also keeps arc.chapter (the display counter) in sync.
+   */
+  function advanceBlueprintPosition(blueprint, mem) {
+    const arcNode = blueprint.arcs[blueprint.currentArcIndex];
+    if (!arcNode) return;
+
+    const chapterNode = arcNode.chapters[arcNode.currentChapterIndex];
+    if (!chapterNode) return;
+
+    if (chapterNode.currentSceneIndex < chapterNode.sceneWave.length - 1) {
+      // Still scenes remaining in this chapter
+      chapterNode.currentSceneIndex += 1;
+    } else {
+      // Chapter complete — reset scene index and advance chapter
+      chapterNode.currentSceneIndex = 0;
+      if (arcNode.currentChapterIndex < arcNode.chapters.length - 1) {
+        arcNode.currentChapterIndex += 1;
+      } else {
+        // Arc complete — reset chapter index and advance arc
+        arcNode.currentChapterIndex = 0;
+        if (blueprint.currentArcIndex < blueprint.arcs.length - 1) {
+          blueprint.currentArcIndex += 1;
+        }
+        // (If already at last arc, stay there — story is at its final wave)
+      }
+      // Sync the display counter so HeaderBar stays accurate
+      mem.arc.chapter = (mem.arc.chapter ?? 1) + 1;
+      mem.arc.beat = 0;
+      // Null out legacy chapterPlan so old-save fallback UI doesn't get confused
+      mem.arc.chapterPlan = null;
+    }
+  }
+
   /* ----------------- helpers ----------------- */
   function setStatus(list, textOrId, status) {
     const id = slug(textOrId);

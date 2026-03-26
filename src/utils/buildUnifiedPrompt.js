@@ -1,5 +1,12 @@
 // src/utils/buildUnifiedPrompt.js
 import { injectPhaseOutLogicIntoPrompt } from './phaseOutManager';
+import {
+  getCurrentArcNode,
+  getCurrentChapterNode,
+  getCurrentSceneWaveRole,
+  blueprintEffectiveMode,
+  deriveTemplateFamily,
+} from './storyBlueprintPlanner';
 
 /**
  * Build the LLM prompt with World/Arc state + compact companions.
@@ -36,7 +43,13 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     : tension <= 8 ? 'breaking_point'
     : 'catastrophe';
 
-  // ── Arc / chapter stage ────────────────────────────────────────────────────
+  // ── Story Blueprint (new) vs legacy ArcPlan/ChapterPlan (fallback) ─────────
+  const storyBlueprint = arc?.storyBlueprint ?? null;
+  const blueprintArcNode     = getCurrentArcNode(storyBlueprint);
+  const blueprintChapterNode = getCurrentChapterNode(storyBlueprint);
+  const sceneWaveRole        = getCurrentSceneWaveRole(storyBlueprint);
+
+  // ── Legacy arc / chapter stage (used when no blueprint) ───────────────────
   const arcPlan = arc?.arcPlan ?? null;
   const arcStage = arcPlan
     ? (arcPlan.arcStageSequence[arcPlan.currentStageIndex] ?? 'open')
@@ -47,15 +60,22 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     ? (chapterPlan.chapterStageSequence[chapterPlan.currentStageIndex] ?? 'open')
     : null;
 
-  // ── Effective mode (cooldown > resolution > tension) ──────────────────────
-  const isCooldown = chapterStage === 'cooldown';
-  const recentStall = sceneLog.length >= 2 &&
-    sceneLog.slice(-2).every(r => (r.resolvedThreads?.length ?? 0) === 0 && r.stateChange === '');
-  const isResolutionMode = !isFirstScene && !isCooldown && (
-    chapterStage === 'resolve' ||
-    (tension >= 9 && recentStall)
-  );
-  const effectiveMode = isCooldown ? 'cooldown' : isResolutionMode ? 'resolution' : tensionMode;
+  // ── Effective mode ─────────────────────────────────────────────────────────
+  // Blueprint takes priority: scene waveRole → effective prompt mode.
+  // Fallback to legacy tension/chapter-stage logic when no blueprint.
+  let effectiveMode;
+  if (storyBlueprint && sceneWaveRole) {
+    effectiveMode = blueprintEffectiveMode(sceneWaveRole, blueprintChapterNode?.targets ?? null);
+  } else {
+    const isCooldown = chapterStage === 'cooldown';
+    const recentStall = sceneLog.length >= 2 &&
+      sceneLog.slice(-2).every(r => (r.resolvedThreads?.length ?? 0) === 0 && r.stateChange === '');
+    const isResolutionMode = !isFirstScene && !isCooldown && (
+      chapterStage === 'resolve' ||
+      (tension >= 9 && recentStall)
+    );
+    effectiveMode = isCooldown ? 'cooldown' : isResolutionMode ? 'resolution' : tensionMode;
+  }
 
   // ── Companions ─────────────────────────────────────────────────────────────
   const activeCompanions = (companions || []).filter(c => (c.status ?? 'active') === 'active');
@@ -81,12 +101,41 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     : '(story just started)';
 
   // ── World block (injected into user message) ───────────────────────────────
-  const arcStageLabel = arcStage
-    ? `${arcStage}${arcPlan ? ` [arc ${arcPlan.currentStageIndex + 1}/${arcPlan.arcStageSequence.length}]` : ''}`
-    : '(planning)';
-  const chapterStageLabel = chapterStage
-    ? `${chapterStage}${chapterPlan ? ` [ch ${chapterPlan.currentStageIndex + 1}/${chapterPlan.chapterStageSequence.length}]` : ''}`
-    : '(planning)';
+
+  // Position labels — prefer blueprint, fall back to legacy plan labels
+  let arcStageLabel, chapterStageLabel, planBlock;
+  if (storyBlueprint && blueprintArcNode && blueprintChapterNode) {
+    const sceneIdx = blueprintChapterNode.currentSceneIndex;
+    const sceneTotal = blueprintChapterNode.sceneWave.length;
+    const chIdx = blueprintArcNode.currentChapterIndex;
+    const chTotal = blueprintArcNode.chapters.length;
+    const arcIdx = storyBlueprint.currentArcIndex;
+    const arcTotal = storyBlueprint.arcs.length;
+    const templateFamily = deriveTemplateFamily(sceneWaveRole, blueprintChapterNode.waveRole);
+    const tgt = blueprintChapterNode.targets;
+
+    arcStageLabel = `${blueprintArcNode.waveRole} [arc ${arcIdx + 1}/${arcTotal}]`;
+    chapterStageLabel = `${blueprintChapterNode.waveRole} [ch ${chIdx + 1}/${chTotal}]`;
+
+    planBlock = `
+Blueprint Position:
+- Arc: ${arcStageLabel} — ${blueprintArcNode.purpose || '—'}
+- Chapter: ${chapterStageLabel} — ${blueprintChapterNode.purpose || '—'}
+- Scene: ${sceneWaveRole} [scene ${sceneIdx + 1}/${sceneTotal}] | template: ${templateFamily}
+- Must Resolve: ${blueprintChapterNode.mustResolve || '—'}
+- Core Question: ${storyBlueprint.coreQuestion || '—'}
+- Targets: tension ${tgt.tension}/10, intimacy ${tgt.intimacy}/10, mystery ${tgt.mystery}/10, pacing: ${tgt.pacing}, choice harshness: ${tgt.choiceHarshness}/10`.trim();
+  } else {
+    arcStageLabel = arcStage
+      ? `${arcStage}${arcPlan ? ` [arc ${arcPlan.currentStageIndex + 1}/${arcPlan.arcStageSequence.length}]` : ''}`
+      : '(planning)';
+    chapterStageLabel = chapterStage
+      ? `${chapterStage}${chapterPlan ? ` [ch ${chapterPlan.currentStageIndex + 1}/${chapterPlan.chapterStageSequence.length}]` : ''}`
+      : '(planning)';
+    planBlock = chapterPlan
+      ? `Chapter Plan:\n- Goal: ${chapterPlan.chapterGoal || '—'}\n- Must Resolve: ${chapterPlan.mustResolve || '—'}\n- Must Advance: ${chapterPlan.mustAdvanceArcThread || '—'}\n- Completion Condition: ${chapterPlan.chapterCompletionCondition || '—'}`
+      : '- Chapter Plan: (being established)';
+  }
 
   const worldBlock = `
 World:
@@ -95,15 +144,10 @@ World:
 - SceneTags: ${(world?.sceneTags || []).join(', ') || '—'}
 - Objectives: ${(world?.objectives || []).map(o => `${o.status === 'active' ? '[•]' : '[ ]'} ${o.text}`).join(' | ') || '—'}
 - Arc: Chapter ${arc?.chapter ?? 1}, Beat ${arc?.beat ?? 0}, Tension ${tension}/10, Mode: ${effectiveMode}
-- Arc Stage: ${arcStageLabel} | Chapter Stage: ${chapterStageLabel}
-- Core Question: ${arc?.coreQuestion || '(not yet established)'}
+${storyBlueprint ? '' : `- Arc Stage: ${arcStageLabel} | Chapter Stage: ${chapterStageLabel}
+`}- Core Question: ${arc?.coreQuestion || storyBlueprint?.coreQuestion || '(not yet established)'}
 - Active Threads: ${(arc?.activeThreads || []).join(' | ') || '(none yet)'}
-${chapterPlan ? `
-Chapter Plan:
-- Goal: ${chapterPlan.chapterGoal || '—'}
-- Must Resolve: ${chapterPlan.mustResolve || '—'}
-- Must Advance: ${chapterPlan.mustAdvanceArcThread || '—'}
-- Completion Condition: ${chapterPlan.chapterCompletionCondition || '—'}`.trim() : '- Chapter Plan: (being established)'}
+${planBlock}
 `.trim();
 
   // ── Task block ─────────────────────────────────────────────────────────────
@@ -136,8 +180,21 @@ LENGTH — 80–120 words maximum. 2–3 paragraphs, ≤ 2 sentences each. Do no
 Show the consequence immediately — action, dialogue, or revelation. No atmospheric preamble. Something must change. Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only in NPC dialogue or direct address. Narration stays second-person.` : ''}`;
 
   // ── System prompt ──────────────────────────────────────────────────────────
-  const arcDirectionBlock = chapterPlan
-    ? `
+  let arcDirectionBlock;
+  if (storyBlueprint && blueprintArcNode && blueprintChapterNode) {
+    const tgt = blueprintChapterNode.targets;
+    arcDirectionBlock = `
+  Story Blueprint is active. Follow the pre-planned wave structure — do not re-invent the macro shape.
+  Arc: ${blueprintArcNode.waveRole} — ${blueprintArcNode.purpose || '—'} (focus: ${blueprintArcNode.focusAxis || '—'})
+  Chapter: ${blueprintChapterNode.waveRole} — ${blueprintChapterNode.purpose || '—'}
+  Scene wave role: ${sceneWaveRole} — shape this scene to match that role exactly.
+  Must Resolve this chapter: ${blueprintChapterNode.mustResolve || '—'}
+  Core Question: ${storyBlueprint.coreQuestion || '—'}
+  Chapter targets: tension ${tgt.tension}/10, intimacy ${tgt.intimacy}/10, pacing ${tgt.pacing}.
+  This scene must serve the wave role. Do NOT invent new structural arcs or sub-planners.
+  On the first scene: set arcDelta.coreQuestion to the blueprint's core question. Introduce narrative threads via arcDelta.addThreads.`;
+  } else if (chapterPlan) {
+    arcDirectionBlock = `
   Arc Stage: ${arcStageLabel}${arcPlan ? `\n  Arc Goal: ${arcPlan.arcGoal}\n  Arc Theme: ${arcPlan.arcTheme}` : ''}
   Chapter Stage: ${chapterStageLabel}
   Chapter Goal: ${chapterPlan.chapterGoal || '—'}
@@ -146,9 +203,11 @@ Show the consequence immediately — action, dialogue, or revelation. No atmosph
   Chapter Completion Condition: ${chapterPlan.chapterCompletionCondition || '—'}
   This scene must either deepen the must-resolve tension OR push toward the chapter completion condition.
   If chapter completion is reached, set arcDelta.advanceChapterStage: true to move to the next stage.
-  If the arc resolution condition is met, set arcDelta.advanceArcStage: true.`
-    : `
+  If the arc resolution condition is met, set arcDelta.advanceArcStage: true.`;
+  } else {
+    arcDirectionBlock = `
   No chapter plan yet. On the first scene: set arcDelta.coreQuestion to the central dramatic question of this story ("Will you…" / "Can you…" / "What does it mean to…"). Introduce one or two narrative threads via arcDelta.addThreads.`;
+  }
 
   const system = `You are a state-driven narrative engine for a branching story game. Write like a game, not a novel — direct, clear, fast.
 
