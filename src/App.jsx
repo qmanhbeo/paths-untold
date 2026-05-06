@@ -1,5 +1,6 @@
 // App.js (with full save/load logic patched correctly)
 import React, { useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import MainMenu from './components/MainMenu';
 import StartScreen from './components/StartScreen';
 import LoadGameScreen from './components/LoadGameScreen';
@@ -72,6 +73,7 @@ function App() {
           onBackToMenu={handleBackToMenu}
         />
       )}
+      <Analytics />
     </div>
   );
 }
