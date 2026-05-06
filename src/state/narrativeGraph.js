@@ -89,6 +89,8 @@ export function createMemorySnapshot(memory = {}) {
     prose: Array.isArray(memory.prose) ? memory.prose
       : Array.isArray(memory.story) ? memory.story
       : [],
+    // Scene log: last 5 structured scene records for causal continuity
+    sceneLog: Array.isArray(memory.sceneLog) ? memory.sceneLog : [],
     // Accept both new (sceneIndex) and old (currentScene) field names
     sceneIndex: Number.isFinite(memory.sceneIndex) ? memory.sceneIndex
       : Number.isFinite(memory.currentScene) ? memory.currentScene

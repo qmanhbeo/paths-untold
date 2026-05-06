@@ -176,8 +176,21 @@ CHOICES — present 2–3 options. Each must be a physical action the player can
   Bad: "Inspect something unknown" / "Question the silence" / "Follow the mystery"
 
 LENGTH — 80–120 words maximum. 2–3 paragraphs, ≤ 2 sentences each. Do not name the player character.`
-    : `Continue. Player chose: "${latestChoice}".
-Show the consequence immediately — action, dialogue, or revelation. No atmospheric preamble. Something must change. Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only in NPC dialogue or direct address. Narration stays second-person.` : ''}`;
+    : `Continue directly from the previous scene.
+
+CONTINUITY:
+- Previous scene: ${(prose[prose.length - 1] || '').slice(0, 400)}
+- Player chose: "${latestChoice}"
+
+CONTINUITY RULES:
+- The FIRST sentence must continue from or be caused by the player's choice above.
+- Do NOT re-introduce the location or atmosphere unless it changed.
+- Do NOT make characters react as if meeting/noticing the player for the first time if they already interacted.
+- Preserve the focal object/situation (e.g., the astrolabe) unless the scene clearly transitions.
+- Do NOT repeat the same reaction beat (e.g., "startled glance", "notices you") from the previous scene.
+- Show consequence immediately: action, dialogue, or revelation. No setup preamble.
+
+Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only in NPC dialogue or direct address. Narration stays second-person.` : ''}`;
 
   // ── System prompt ──────────────────────────────────────────────────────────
   let arcDirectionBlock;
