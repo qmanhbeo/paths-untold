@@ -10,14 +10,6 @@ And that’s the part that’s messing with you right now.
 
 ## Let’s use *Attack on Titan* as your example
 
-![Image](https://i.etsystatic.com/53600391/r/il/429f64/6451973577/il_fullxfull.6451973577_4kz4.jpg)
-
-![Image](https://i.pinimg.com/564x/e6/10/ef/e610efe463b4dbc402bc9110d245b3aa.jpg)
-
-![Image](https://www.slashfilm.com/img/gallery/why-did-eren-yeager-start-the-rumbling-on-attack-on-titan/intro-1736525257.jpg)
-
-![Image](https://www.slashfilm.com/img/gallery/why-did-eren-yeager-start-the-rumbling-on-attack-on-titan/how-did-the-rumbling-stop-1736525260.jpg)
-
 You’re right about the branching thing. Eren *did* see multiple possibilities.
 But here’s the twist:
 
