@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Development
 ```bash
-npm run dev          # Run frontend (Vite, port 3000) + backend (Express, port 5174) concurrently
+npm run dev          # Run frontend (Vite, port 3000) + backend (Express, port 5175) concurrently
 npm start            # Vite dev server only (port 3000)
 ```
 
@@ -28,22 +28,28 @@ npm run test:watch   # Run Vitest in watch mode
 
 ### Backend (run from /server)
 ```bash
-npm run dev          # Start Express server with .env variables
+npm --prefix server run dev    # Start Express server with .env variables
 ```
 
 ## Environment Setup
 
 **Backend** (`/server/.env`):
 ```
-OPENAI_API_KEY=...
-UPSTREAM_URL=https://api.openai.com/v1/chat/completions  # optional
-MODEL=gpt-4o-mini                                         # optional
-PORT=5174                                                 # optional
+LLM_PROVIDER=openai|google         # Provider selection (default: openai)
+OPENAI_API_KEY=...                 # Required when LLM_PROVIDER=openai
+MODEL=gpt-4o-mini                 # OpenAI model (default: gpt-4o-mini)
+MAX_COMPLETION_TOKENS=1600          # OpenAI max tokens
+
+GOOGLE_API_KEY=...                  # Required when LLM_PROVIDER=google
+GOOGLE_MODEL=gemini-2.5-flash-lite # Google model (default: gemini-2.5-flash-lite)
+GOOGLE_MAX_TOKENS=1600             # Google max tokens
+
+PORT=5175                         # Server port (default: 5175)
 ```
 
 **Frontend** (root `.env`):
 ```
-VITE_API_BASE=http://localhost:5174/api   # proxy URL
+VITE_API_BASE=http://localhost:5175/api   # proxy URL
 VITE_LLM_MODEL=gpt-4o-mini
 VITE_TERMINAL_DEBUG_LOGS=true            # optional debug logging
 ```
