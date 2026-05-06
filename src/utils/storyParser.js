@@ -159,13 +159,41 @@ function coerceCompanionsDelta(v) {
   }).filter(Boolean);
 }
 
+function coerceSceneRecord(v) {
+  if (!v || typeof v !== 'object') return null;
+  const event = typeof v.event === 'string' ? v.event.trim() : '';
+  const stateChange = typeof v.stateChange === 'string' ? v.stateChange.trim() : '';
+  if (!event && !stateChange) return null;
+  const reveals = Array.isArray(v.reveals) ? v.reveals.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : [];
+  const resolvedThreads = Array.isArray(v.resolvedThreads) ? v.resolvedThreads.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : [];
+  return { event, stateChange, reveals, resolvedThreads };
+}
+
+function coerceChoiceDirector(v) {
+  if (!v || typeof v !== 'object') return null;
+  const needed = typeof v.needed === 'boolean' ? v.needed : true;
+  const validTypes = ['paths', 'threshold', 'freetext', 'none', 'value', 'action', 'relational'];
+  const type = validTypes.includes(v.type) ? v.type : 'paths';
+  const tension = typeof v.tension === 'string' ? v.tension : '';
+  const count = Number.isInteger(v.count) && v.count >= 0 && v.count <= 4 ? v.count : null;
+  const prompt = typeof v.prompt === 'string' ? v.prompt.trim() : '';
+  return { needed, type, tension, count, prompt };
+}
+
 function coerceArcDelta(v) {
   if (!v || typeof v !== 'object') return null;
   const t = Number.isInteger(v.tension) && [-1,0,1].includes(v.tension) ? v.tension : undefined;
   const b = Number.isInteger(v.beat) && [0,1].includes(v.beat) ? v.beat : undefined;
   const c = Number.isInteger(v.chapter) && [0,1].includes(v.chapter) ? v.chapter : undefined;
-  if (t === undefined && b === undefined && c === undefined) return null;
-  return { tension: t, beat: b, chapter: c };
+  const cq = typeof v.coreQuestion === 'string' && v.coreQuestion.trim() ? v.coreQuestion.trim() : undefined;
+  const add = Array.isArray(v.addThreads) ? v.addThreads.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : undefined;
+  const remove = Array.isArray(v.removeThreads) ? v.removeThreads.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()) : undefined;
+  const completedBeat = typeof v.completedBeat === 'string' && v.completedBeat.trim() ? v.completedBeat.trim() : undefined;
+  const advanceArc = v.advanceArc === true ? true : undefined;
+  const advanceChapterStage = v.advanceChapterStage === true ? true : undefined;
+  const advanceArcStage = v.advanceArcStage === true ? true : undefined;
+  if (t === undefined && b === undefined && c === undefined && cq === undefined && !add?.length && !remove?.length && !completedBeat && !advanceArc && !advanceChapterStage && !advanceArcStage) return null;
+  return { tension: t, beat: b, chapter: c, coreQuestion: cq, addThreads: add, removeThreads: remove, completedBeat, advanceArc, advanceChapterStage, advanceArcStage };
 }
 
 function normalizeScenePacket(obj, raw) {
@@ -186,8 +214,10 @@ function normalizeScenePacket(obj, raw) {
   const locationDelta = coerceLocationDelta(obj.locationDelta);
   const companionsDelta = coerceCompanionsDelta(obj.companionsDelta);
   const arcDelta = coerceArcDelta(obj.arcDelta);
+  const choiceDirector = coerceChoiceDirector(obj.choiceDirector);
+  const sceneRecord = coerceSceneRecord(obj.sceneRecord);
 
-  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta };
+  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta, choiceDirector, sceneRecord };
 }
 
 // ----------------- Public: central entry point -----------------

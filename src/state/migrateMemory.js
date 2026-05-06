@@ -18,7 +18,17 @@ export function migrateMemory(raw) {
       flags: {}
     };
 
-    const arc = isNew ? raw.arc : { chapter: 1, beat: 0, tension: 3 };
+    const rawArc = isNew ? raw.arc : {};
+    const arc = {
+      chapter: rawArc.chapter ?? 1,
+      beat: rawArc.beat ?? 0,
+      tension: rawArc.tension ?? 3,
+      coreQuestion: rawArc.coreQuestion ?? '',
+      activeThreads: Array.isArray(rawArc.activeThreads) ? rawArc.activeThreads : [],
+      arcPlan: rawArc.arcPlan ?? null,
+      chapterPlan: rawArc.chapterPlan ?? null,
+      storyBlueprint: rawArc.storyBlueprint ?? null
+    };
 
     // Handle both old field names (story/choices/currentScene) and new (prose/paths/sceneIndex)
     const prose = Array.isArray(raw?.prose) ? raw.prose
@@ -37,6 +47,7 @@ export function migrateMemory(raw) {
       prose,
       paths,
       summary: raw?.summary || [],
+      sceneLog: Array.isArray(raw?.sceneLog) ? raw.sceneLog : [],
       companions: (raw?.companions || []).map(c => ({
         id: c.id || slug(c.name || "npc"),
         name: c.name || "Unknown",

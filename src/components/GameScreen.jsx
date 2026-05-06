@@ -3,6 +3,8 @@ import { generateScene } from '../utils/AI-chat';
 import { createDebugLogger } from '../utils/debugLog';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildScenePrompt } from '../utils/buildUnifiedPrompt';
+import { planStoryBlueprint } from '../utils/storyBlueprintPlanner';
+import { planChapter } from '../utils/chapterPlanner';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
 import {
@@ -23,7 +25,7 @@ import CharacterLog from './characterLog';
 import QuestLog from './QuestLog';
 import ItemsPanel from './ItemsPanel';
 import NarrativeBranchView from './NarrativeBranchView';
-import { HeaderBar, ChoiceGrid } from './GameScreenComponents';
+import { HeaderBar, ChoiceGrid, NameInputOverlay, FreeTextInput } from './GameScreenComponents';
 
 import './styles.css';
 import backgroundImage from '../images/background-black.jpg';
@@ -35,6 +37,7 @@ const createFreshMemory = () => ({
   paths: [],
   companions: [],
   prose: [],
+  sceneLog: [],
   sceneIndex: 0,
   world: {
     clock: { day: 1, time: 'day' },
@@ -43,11 +46,12 @@ const createFreshMemory = () => ({
     objectives: [],
     flags: {}
   },
-  arc: { chapter: 1, beat: 0, tension: 3 }
+  arc: { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, storyBlueprint: null }
 });
 
 const ensureWorldArc = (mem) => ({
   ...mem,
+  sceneLog: mem?.sceneLog ?? [],
   world: mem?.world ?? {
     clock: { day: 1, time: 'day' },
     location: { name: 'Unknown Place', tags: [] },
@@ -55,7 +59,9 @@ const ensureWorldArc = (mem) => ({
     objectives: [],
     flags: {}
   },
-  arc: mem?.arc ?? { chapter: 1, beat: 0, tension: 3 }
+  arc: mem?.arc
+    ? { coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, storyBlueprint: null, ...mem.arc }
+    : { chapter: 1, beat: 0, tension: 3, coreQuestion: '', activeThreads: [], arcPlan: null, chapterPlan: null, storyBlueprint: null }
 });
 
 const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
@@ -63,6 +69,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [fadeInTitle, setFadeInTitle] = useState(true);
   const [segments, setSegments] = useState([]);
   const [displayedPaths, setDisplayedPaths] = useState([]);
+  const [displayedChoiceDirector, setDisplayedChoiceDirector] = useState(null);
   const [rawOutput, setRawOutput] = useState('');
   const [showCharacterPanel, setShowCharacterPanel] = useState(false);
   const [showQuestPanel, setShowQuestPanel] = useState(false);
@@ -73,9 +80,13 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const [showSaveOptions, setShowSaveOptions] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
+  const [playerName, setPlayerName] = useState(storyOptions?.playerName || '');
+  const [showNameInput, setShowNameInput] = useState(false);
+  const [namePromptText, setNamePromptText] = useState('');
 
   const storyBoxRef = useRef(null);
   const sceneGenerated = useRef(false);
+  const playerNameRef = useRef(storyOptions?.playerName || '');
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -106,6 +117,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     graphRef.current = narrativeGraph;
   }, [narrativeGraph]);
 
+  useEffect(() => {
+    playerNameRef.current = playerName;
+  }, [playerName]);
+
   const smoothScrollToBottom = (el) => {
     if (!el) return;
     setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 60);
@@ -125,6 +140,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setFadeInTitle(true);
     setRawOutput(node.rawOutput || '');
     setDisplayedPaths(node.paths || []);
+    setDisplayedChoiceDirector(node.choiceDirector ?? null);
     setSegments(
       buildSceneSegments(nextGraph, nodeId, options.animateNodeId ?? null)
     );
@@ -147,22 +163,42 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       setGameMemory(initialMemory);
       memoryRef.current = initialMemory;
       setIsLoading(true);
+      sceneGenerated.current = true;
 
-      const { system: openingSys, user: openingUser } = buildScenePrompt(initialMemory, '', storyOptions);
-      const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
-      debug.log('[PROMPT 0]', openingUser);
+      (async () => {
+        // Master Planner: one initialization call that generates the full Story Blueprint
+        // (nested wave structure: story → arcs → chapters → scenes).
+        // Falls back to the legacy planChapter() call if the blueprint fails.
+        const storyBlueprint = await planStoryBlueprint(storyOptions, generateScene);
+        let memWithPlan;
+        if (storyBlueprint) {
+          memWithPlan = {
+            ...initialMemory,
+            arc: { ...initialMemory.arc, storyBlueprint }
+          };
+        } else {
+          // Fallback: legacy per-chapter planning
+          const chapterPlan = await planChapter(storyOptions, initialMemory.arc, generateScene);
+          memWithPlan = chapterPlan
+            ? { ...initialMemory, arc: { ...initialMemory.arc, chapterPlan } }
+            : initialMemory;
+        }
+        setGameMemory(memWithPlan);
+        memoryRef.current = memWithPlan;
 
-      generateScene(openingMessages, async (rawAI0) => {
+        const { system: openingSys, user: openingUser } = buildScenePrompt(memWithPlan, '', { ...storyOptions, playerName });
+        const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
+        debug.log('[PROMPT 0]', openingUser);
+
+        const rawAI0 = await generateScene(openingMessages);
         await handleSceneResponse(rawAI0, {
           choice: '',
           parentId: null,
           promptForNode: openingUser,
-          baseMemory: initialMemory
+          baseMemory: memWithPlan
         });
         setIsLoading(false);
-      });
-
-      sceneGenerated.current = true;
+      })();
     }
   }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -237,6 +273,12 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
       restoreNode(nextGraph, newNode.id, { animateNodeId: newNode.id });
 
+      // Deferred identity: show name input only when the story earns it
+      if (!playerNameRef.current && obj.identityRequirement?.required === true) {
+        setNamePromptText(obj.identityRequirement.promptText || '');
+        setShowNameInput(true);
+      }
+
       return {
         prose: obj.prose,
         sceneIndex: nextMem.sceneIndex,
@@ -251,7 +293,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           ...prev,
           { html: '<i class="text-amber-300/70">The story hesitates for a moment\u2026</i>', animate: true, type: 'retry' }
         ]);
-        const { system: retrySys, user: retryUser } = buildScenePrompt(baseMemory, choice, storyOptions);
+        const { system: retrySys, user: retryUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName: playerNameRef.current });
         const retryMessages = [{ role: 'system', content: retrySys }, { role: 'user', content: retryUser }];
         return new Promise((resolve) => {
           generateScene(retryMessages, async (newResponse) => {
@@ -307,9 +349,22 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
     setIsLoading(true);
 
-    const baseMemory = createMemorySnapshot(memoryRef.current);
+    let baseMemory = createMemorySnapshot(memoryRef.current);
+
+    // Re-plan chapter only when running without a Story Blueprint (legacy fallback or old save).
+    // When a blueprint is present, chapter transitions are handled automatically by
+    // applyDeltas advancing the blueprint position — no extra LLM call needed.
+    if (!baseMemory.arc?.storyBlueprint && baseMemory.arc?.chapterPlan === null) {
+      const newChapterPlan = await planChapter(storyOptions, baseMemory.arc, generateScene);
+      if (newChapterPlan) {
+        baseMemory = { ...baseMemory, arc: { ...baseMemory.arc, chapterPlan: newChapterPlan } };
+        setGameMemory(baseMemory);
+        memoryRef.current = baseMemory;
+      }
+    }
+
     const nextSceneIndex = (baseMemory.sceneIndex ?? 0) + 1;
-    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, storyOptions);
+    const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName });
     const branchMessages = [{ role: 'system', content: branchSys }, { role: 'user', content: branchUser }];
 
     debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchUser);
@@ -340,7 +395,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     const normalizedGraph = normalizeNarrativeGraph(narrativeGraph);
 
     saveGameToSlot(selectedSlot, {
-      options: { ...storyOptions, prompt, resumeFromSave: true },
+      options: { ...storyOptions, prompt, resumeFromSave: true, playerName },
       memory: gameMemory,
       ui: {
         displayedStory: segments.map((segment) => segment.html).join(''),
@@ -358,7 +413,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
   return (
     <div
-      className="relative flex h-screen flex-row bg-cover bg-center bg-no-repeat"
+      className="relative flex h-screen flex-row overflow-hidden bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${backgroundImage})` }}
     >
       {showCharacterPanel && (
@@ -391,7 +446,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         />
       )}
 
-      <div className={`flex flex-grow flex-col p-10 pt-10 animate-fade-in-slow transition-[filter] duration-300 ${showCharacterPanel || showQuestPanel || showItemsPanel || showNarrativeMap ? 'blur-sm' : 'blur-none'}`}>
+      <div className={`flex flex-grow flex-col p-4 sm:p-10 animate-fade-in-slow transition-[filter] duration-300 overflow-hidden ${showCharacterPanel || showQuestPanel || showItemsPanel || showNarrativeMap ? 'blur-sm' : 'blur-none'}`}>
         <h1
           className={`mb-4 font-berkshire text-2xl font-bold text-white transition-opacity duration-1000 ${
             fadeInTitle ? 'opacity-100' : 'opacity-0'
@@ -402,47 +457,44 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
 
         <HeaderBar mem={gameMemory} />
 
-        <div className="mb-2 flex items-center justify-between gap-2 animate-fade-in-slow">
-          <div className="flex items-center gap-2">
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 animate-fade-in-slow">
+          <button
+            onClick={() => setShowNarrativeMap(true)}
+            className="font-cardo rounded border border-cyan-300/60 px-2 py-1 text-xs sm:text-sm text-white/90 hover:bg-cyan-900/40 transition-colors"
+          >
+            Narrative Map
+          </button>
+          <button
+            onClick={() => setShowQuestPanel(!showQuestPanel)}
+            className="font-cardo rounded border border-amber-300/40 px-2 py-1 text-xs sm:text-sm text-white/70 hover:bg-amber-900/30 transition-colors"
+          >
+            Quests
+          </button>
+          <button
+            onClick={() => setShowItemsPanel(!showItemsPanel)}
+            className="font-cardo rounded border border-white/20 px-2 py-1 text-xs sm:text-sm text-white/60 hover:bg-white/10 transition-colors"
+          >
+            Items
+          </button>
+          {(gameMemory.companions?.length ?? 0) > 0 && (
             <button
-              onClick={() => setShowNarrativeMap(true)}
-              className="font-cardo rounded border border-cyan-300/60 px-3 py-1 text-sm text-white/90 hover:bg-cyan-900/40 transition-colors"
+              onClick={() => setShowCharacterPanel(!showCharacterPanel)}
+              className="font-cardo rounded border border-white/25 px-2 py-1 text-xs sm:text-sm text-white/70 hover:bg-white/10 transition-colors"
             >
-              Narrative Map
+              Characters
             </button>
-            <button
-              onClick={() => setShowQuestPanel(!showQuestPanel)}
-              className="font-cardo rounded border border-amber-300/40 px-3 py-1 text-sm text-white/70 hover:bg-amber-900/30 transition-colors"
-            >
-              Quests
-            </button>
-            <button
-              onClick={() => setShowItemsPanel(!showItemsPanel)}
-              className="font-cardo rounded border border-white/20 px-3 py-1 text-sm text-white/60 hover:bg-white/10 transition-colors"
-            >
-              Items
-            </button>
-            {(gameMemory.companions?.length ?? 0) > 0 && (
-              <button
-                onClick={() => setShowCharacterPanel(!showCharacterPanel)}
-                className="font-cardo rounded border border-white/25 px-3 py-1 text-sm text-white/70 hover:bg-white/10 transition-colors"
-              >
-                Characters
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
+          )}
+          <div className="ml-auto flex items-center gap-2">
             <button
               disabled={isLoading}
               onClick={handleSave}
-              className="font-cardo rounded border border-yellow-300/50 px-3 py-1 text-sm text-white/80 hover:bg-yellow-800/40 disabled:opacity-30 transition-colors"
+              className="font-cardo rounded border border-yellow-300/50 px-2 py-1 text-xs sm:text-sm text-white/80 hover:bg-yellow-800/40 disabled:opacity-30 transition-colors"
             >
               Save
             </button>
             <button
               onClick={onBackToMenu}
-              className="font-cardo rounded border border-white/15 px-3 py-1 text-xs text-white/40 hover:text-white/70 hover:border-white/30 transition-colors"
+              className="font-cardo rounded border border-white/15 px-2 py-1 text-xs text-white/40 hover:text-white/70 hover:border-white/30 transition-colors"
             >
               ← Menu
             </button>
@@ -504,11 +556,20 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         </div>
 
         <div className="flex-shrink-0 animate-fade-in-slow">
-          <ChoiceGrid
-            choices={displayedPaths}
-            onChoice={handleChoiceClick}
-            disabled={isLoading}
-          />
+          {!isLoading && displayedChoiceDirector?.type === 'freetext' ? (
+            <FreeTextInput
+              prompt={displayedChoiceDirector.prompt}
+              onSubmit={(text) => handleChoiceClick(text, null)}
+            />
+          ) : (
+            <ChoiceGrid
+              choices={displayedPaths}
+              onChoice={handleChoiceClick}
+              onContinue={!isLoading && displayedPaths.length === 0 ? () => handleChoiceClick('') : undefined}
+              disabled={isLoading}
+              variant={displayedChoiceDirector?.type === 'threshold' ? 'threshold' : 'default'}
+            />
+          )}
         </div>
       </div>
 
@@ -523,6 +584,17 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         >
           Jump to latest
         </button>
+      )}
+
+      {showNameInput && (
+        <NameInputOverlay
+          promptText={namePromptText}
+          onSubmit={(name) => {
+            setPlayerName(name);
+            playerNameRef.current = name;
+            setShowNameInput(false);
+          }}
+        />
       )}
     </div>
   );
