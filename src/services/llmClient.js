@@ -1,13 +1,20 @@
 // src/services/llmClient.js
 import { API_BASE, LLM_MODEL } from '../config/env';
 
-// Planner requests need longer timeout and more tokens than scene generation.
+// Client timeout must exceed server per-attempt timeout because server may retry fallback models.
+// Scene timeout: 75s allows server fallback attempt (2) to complete.
+// Planner timeout: 90s for longer generation.
+// Evaluator timeout: 20s for quick scoring.
 const PLANNER_TIMEOUT = 90000;
-const SCENE_TIMEOUT = 30000;
+const SCENE_TIMEOUT = 75000;
+const EVALUATOR_TIMEOUT = 20000;
 
-function withTimeout(ms = SCENE_TIMEOUT) {
+function withTimeout(ms = SCENE_TIMEOUT, label = 'request') {
   const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), ms);
+  const id = setTimeout(() => {
+    ctrl.abort();
+    console.log(`[llmClient] ${label} timeout after ${ms}ms`);
+  }, ms);
   return { signal: ctrl.signal, clear: () => clearTimeout(id) };
 }
 
@@ -17,22 +24,30 @@ function withTimeout(ms = SCENE_TIMEOUT) {
  * Options:
  *   - model: override model name
  *   - isPlanner: true for Story Blueprint planner (uses longer timeout)
+ *   - isEvaluator: true for narrative evaluator (uses shorter timeout)
  */
 export async function chat(messagesOrPrompt, options = {}) {
   const model = options.model || LLM_MODEL;
   const isPlanner = options.isPlanner === true;
-  // Planner needs longer timeout; scenes use default 30s.
-  const timeout = isPlanner ? PLANNER_TIMEOUT : SCENE_TIMEOUT;
+  const isEvaluator = options.isEvaluator === true;
+
+  // Determine timeout based on request type
+  const timeout = isPlanner ? PLANNER_TIMEOUT : (isEvaluator ? EVALUATOR_TIMEOUT : SCENE_TIMEOUT);
   const messages = Array.isArray(messagesOrPrompt)
     ? messagesOrPrompt
     : [{ role: 'user', content: messagesOrPrompt }];
-  const { signal, clear } = withTimeout(timeout);
+  const { signal, clear } = withTimeout(timeout, isEvaluator ? 'evaluator' : (isPlanner ? 'planner' : 'scene'));
+
+  if (import.meta.env.DEV) {
+    console.log('[llmClient]', isEvaluator ? 'evaluator' : (isPlanner ? 'planner' : 'scene'), 'timeout:', timeout);
+  }
+
   try {
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
-      body: JSON.stringify({ model, messages, isPlanner }),
+      body: JSON.stringify({ model, messages, isPlanner, isEvaluator }),
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');

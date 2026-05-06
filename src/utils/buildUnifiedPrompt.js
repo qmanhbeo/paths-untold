@@ -8,6 +8,8 @@ import {
   deriveTemplateFamily,
 } from './storyBlueprintPlanner';
 
+const DEBUG_FULL_PROMPTS = false;  // Set to true to dump full prompts (verbose)
+
 // Opening scene schema — includes title for story initialization.
 const OPENING_SCENE_SCHEMA_CONTRACT = `OUTPUT JSON SCHEMA FOR OPENING SCENE (required, no exceptions):
 {
@@ -55,6 +57,57 @@ STRICT OUTPUT RULES FOR FOLLOW-UP SCENE:
 - "paths" must contain 2-3 physical actions the player can take immediately.
 - "prose" must be narration/prose text, not a scene or story description.
 `;
+
+// Wave Director: converts current scene wave role into explicit behavioral instructions.
+function buildWaveDirectorBlock(sceneWaveRole, targets, chapterNode) {
+  if (!sceneWaveRole || !targets) return '';
+
+  const t = targets.tension ?? 5;
+  const intimacy = targets.intimacy ?? 5;
+  const mystery = targets.mystery ?? 5;
+  const harshness = targets.choiceHarshness ?? 5;
+  const pacing = targets.pacing || 'medium';
+  const revelation = targets.revelation ?? 5;
+
+  const tensionHint = t <= 2 ? 'keep pressure minimal' : t <= 4 ? 'keep moderate tension' : t <= 6 ? 'raise stakes' : t <= 8 ? 'high pressure' : 'maximum pressure';
+  const intimacyHint = intimacy >= 7 ? 'deep emotional focus' : intimacy >= 4 ? 'include meaningful interpersonal moments' : 'keep emotional distance';
+  const mysteryHint = mystery >= 7 ? 'leave significant uncertainty' : mystery >= 4 ? 'include some uncertainty without obscurity' : 'keep clarity';
+  const harshnessHint = harshness >= 7 ? 'choices have serious consequences' : harshness >= 4 ? 'choices matter' : 'low-cost, safe choices';
+  const paceHint = pacing === 'slow' ? 'take time with moments, linger' : pacing === 'fast' ? 'keep scene moving fast' : 'steady pace';
+  const revealHint = revelation >= 7 ? 'reveal major information' : revelation >= 4 ? 'reveal a meaningful detail' : 'keep information minimal';
+
+  let roleInstruction;
+  switch (sceneWaveRole) {
+    case 'open':
+      roleInstruction = `OPEN WAVE: Establish the situation clearly. Clarify stakes or introduce curiosity. Avoid full payoff or sudden escalation. Choices should invite engagement or investigation. Do NOT resolve anything major yet.`;
+      break;
+    case 'build':
+      roleInstruction = `BUILD WAVE: Escalate existing tension. Complicate the previous choice or deepen pressure. Do NOT fully resolve mustResolve yet. Build toward a decision point. Choices should make things harder or more committed.`;
+      break;
+    case 'resolve':
+      roleInstruction = `RESOLVE WAVE: Pay off or answer a tension. Directly address mustResolve. Reveal, decide, confront, or close something concrete. Do NOT add new mysteries or vague cliffhangers. Choices lead to consequence.`;
+      break;
+    case 'cooldown':
+      roleInstruction = `COOLDOWN WAVE: Lower immediate pressure. Show aftermath or consequences. Allow reflection or quiet repositioning. Do NOT introduce new major conflicts. Choices are simple preference or emotional stance.`;
+      break;
+    default:
+      roleInstruction = '';
+  }
+
+  if (!roleInstruction) return '';
+
+  return `
+WAVE DIRECTOR (follow exactly):
+${roleInstruction}
+
+TARGET INTERPRETATION:
+- Tension ${t}/10: ${tensionHint}.
+- Intimacy ${intimacy}/10: ${intimacyHint}.
+- Mystery ${mystery}/10: ${mysteryHint}.
+- Choice harshness ${harshness}/10: ${harshnessHint}.
+- Pacing ${pacing}: ${paceHint}.
+- Revelation ${revelation}/10: ${revealHint}.`;
+}
 
 /**
  * Build the LLM prompt with World/Arc state + compact companions.
@@ -108,10 +161,11 @@ export const buildScenePrompt = (gameMemory, latestChoice, playerIntro = null) =
     ? (chapterPlan.chapterStageSequence[chapterPlan.currentStageIndex] ?? 'open')
     : null;
 
-  // ── Effective mode ─────────────────────────────────────────────────────────
+// ── Effective mode ─────────────────────────────────────────────────────────
   // Blueprint takes priority: scene waveRole → effective prompt mode.
   // Fallback to legacy tension/chapter-stage logic when no blueprint.
   let effectiveMode;
+  let waveDirectorBlock = '';  // declared early for safe dev logging
   if (storyBlueprint && sceneWaveRole) {
     effectiveMode = blueprintEffectiveMode(sceneWaveRole, blueprintChapterNode?.targets ?? null);
   } else {
@@ -248,6 +302,8 @@ Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only i
   let arcDirectionBlock;
   if (storyBlueprint && blueprintArcNode && blueprintChapterNode) {
     const tgt = blueprintChapterNode.targets;
+    // Generate Wave Director block for explicit wave-role instructions
+    waveDirectorBlock = buildWaveDirectorBlock(sceneWaveRole, tgt, blueprintChapterNode);
     arcDirectionBlock = `
   Story Blueprint is active. Follow the pre-planned wave structure — do not re-invent the macro shape.
   Arc: ${blueprintArcNode.waveRole} — ${blueprintArcNode.purpose || '—'} (focus: ${blueprintArcNode.focusAxis || '—'})
@@ -257,7 +313,7 @@ Max 120 words.${playerName ? `\nProtagonist name: "${playerName}" — use only i
   Core Question: ${storyBlueprint.coreQuestion || '—'}
   Chapter targets: tension ${tgt.tension}/10, intimacy ${tgt.intimacy}/10, pacing ${tgt.pacing}.
   This scene must serve the wave role. Do NOT invent new structural arcs or sub-planners.
-  On the first scene: set arcDelta.coreQuestion to the blueprint's core question. Introduce narrative threads via arcDelta.addThreads.`;
+  On the first scene: set arcDelta.coreQuestion to the blueprint's core question. Introduce narrative threads via arcDelta.addThreads.${waveDirectorBlock}`;
   } else if (chapterPlan) {
     arcDirectionBlock = `
   Arc Stage: ${arcStageLabel}${arcPlan ? `\n  Arc Goal: ${arcPlan.arcGoal}\n  Arc Theme: ${arcPlan.arcTheme}` : ''}
@@ -403,6 +459,17 @@ ${phaseOutPromptExtras}
 
 TASK:
 ${taskBlock}`.trim();
+
+  // Dev verification: confirm Wave Director block is in system prompt
+  if (import.meta.env.DEV && storyBlueprint) {
+    if (DEBUG_FULL_PROMPTS) {
+      console.log('[prompt] wave director active:', system.includes('WAVE DIRECTOR'));
+      console.log(
+        '[prompt] system includes wave role:',
+        system.includes('OPEN WAVE') || system.includes('BUILD WAVE') || system.includes('RESOLVE WAVE') || system.includes('COOLDOWN WAVE')
+      );
+    }
+  }
 
   return { system, user };
 };

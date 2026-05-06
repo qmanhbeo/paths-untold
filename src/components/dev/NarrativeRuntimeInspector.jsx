@@ -140,6 +140,11 @@ export function NarrativeRuntimeInspector({ memory, sceneIndex, storyOptions }) 
               active={activeTab === 'raw'}
               onClick={() => setActiveTab('raw')}
             />
+            <Tab
+              label="Evaluation"
+              active={activeTab === 'evaluation'}
+              onClick={() => setActiveTab('evaluation')}
+            />
           </div>
 
           {/* Tab content */}
@@ -150,6 +155,8 @@ export function NarrativeRuntimeInspector({ memory, sceneIndex, storyOptions }) 
                 currentPosition={currentPosition}
                 targets={targets}
               />
+            ) : activeTab === 'evaluation' ? (
+              <EvaluationView evaluation={memory?._lastEvaluation} />
             ) : (
               <RawStateView
                 world={world}
@@ -262,6 +269,71 @@ function Section({ title, expanded, toggle, children }) {
         {isExpanded ? '▼' : '▶'} {title}
       </div>
       {isExpanded && <div style={{ marginLeft: 8 }}>{children}</div>}
+    </div>
+  );
+}
+
+function EvaluationView({ evaluation }) {
+  if (!evaluation) {
+    return (
+      <div style={{ padding: 12, color: '#666' }}>
+        No evaluation yet. Play scenes to generate evaluation scores.
+      </div>
+    );
+  }
+
+  const formatScore = (val) => {
+    if (typeof val !== 'number') return '—';
+    // Handle both 0-1 and 0-10 scales
+    if (val <= 1) return val.toFixed(2);
+    return Math.round(val);
+  };
+
+  const scoreColor = (val) => {
+    if (typeof val !== 'number') return '#666';
+    // 0-10: good >= 7, ok >= 4, else low
+    // 0-1: good >= 0.7, ok >= 0.4
+    const normalized = val <= 1 ? val : val / 10;
+    if (normalized >= 0.7) return '#00ff88';
+    if (normalized >= 0.4) return '#ffaa00';
+    return '#ff4444';
+  };
+
+  return (
+    <div style={{ padding: 12, fontSize: 11 }}>
+      <div style={{ marginBottom: 12, color: '#aaa' }}>EVALUATION</div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ color: '#888' }}>waveMatch: </span>
+        <span style={{ color: scoreColor(evaluation.waveMatch) }}>{formatScore(evaluation.waveMatch)}</span>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ color: '#888' }}>continuity: </span>
+        <span style={{ color: scoreColor(evaluation.continuity) }}>{formatScore(evaluation.continuity)}</span>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ color: '#888' }}>stakesProgression: </span>
+        <span style={{ color: scoreColor(evaluation.stakesProgression) }}>{formatScore(evaluation.stakesProgression)}</span>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ color: '#888' }}>choiceFit: </span>
+        <span style={{ color: scoreColor(evaluation.choiceFit) }}>{formatScore(evaluation.choiceFit)}</span>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ color: '#888' }}>mysteryControl: </span>
+        <span style={{ color: scoreColor(evaluation.mysteryControl) }}>{formatScore(evaluation.mysteryControl)}</span>
+      </div>
+
+      {evaluation.notes && (
+        <div style={{ marginTop: 12, padding: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>
+          <div style={{ color: '#666', marginBottom: 4 }}>notes:</div>
+          <div style={{ color: '#ccc' }}>{evaluation.notes}</div>
+        </div>
+      )}
     </div>
   );
 }

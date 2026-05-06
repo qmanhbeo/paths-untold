@@ -29,8 +29,9 @@ const RETRYABLE_HTTP_CODES = new Set([429, 500, 502, 503, 504]);
 
 // ---- Cohere Config ----
 const COHERE_API_KEY = process.env.COHERE_API;  // Note: .env uses COHERE_API
-const COHERE_MODEL = process.env.COHERE_MODEL || 'command-r-plus-08-2024';
-const COHERE_MODEL_FALLBACKS = (process.env.COHERE_MODEL_FALLBACKS || '').split(',').filter(Boolean);
+// Primary scene model: command-a-03-2025 (faster than command-r-plus)
+const COHERE_MODEL = process.env.COHERE_MODEL || 'command-a-03-2025';
+const COHERE_MODEL_FALLBACKS = (process.env.COHERE_MODEL_FALLBACKS || 'command-r-plus-08-2024').split(',').filter(Boolean);
 const COHERE_MODEL_LAST_RESORTS = (process.env.COHERE_MODEL_LAST_RESORTS || '').split(',').filter(Boolean);
 const COHERE_MAX_TOKENS = Number(process.env.COHERE_MAX_TOKENS || 1600);
 const COHERE_TIMEOUT = Number(process.env.COHERE_TIMEOUT || 30000);
@@ -76,7 +77,8 @@ const ChatSchema = z.object({
   })).min(1),
   model: z.string().optional(),
   stream: z.boolean().optional(),
-  isPlanner: z.boolean().optional()  // Planner requests need longer timeout/tokens
+  isPlanner: z.boolean().optional(),  // Planner requests need longer timeout/tokens
+  isEvaluator: z.boolean().optional()  // Evaluator requests need shorter timeout/tokens
 });
 
 const DebugLogSchema = z.object({
@@ -238,15 +240,25 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
   }
 
-  const { messages, stream: wantsStream, isPlanner } = parsed.data;
+  const { messages, stream: wantsStream, isPlanner, isEvaluator } = parsed.data;
+
+  // Dev-only: log system prompt once when WAVE DIRECTOR is present
+  if (process.env.NODE_ENV !== 'production' && !global.__loggedWaveDirectorSystem) {
+    const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+    if (systemMsg.includes('WAVE DIRECTOR')) {
+      console.log('[SERVER] system prompt with WAVE DIRECTOR (' + systemMsg.length + ' chars)');
+      console.log(systemMsg.slice(0, 2000) + (systemMsg.length > 2000 ? '...[truncated]' : ''));
+      global.__loggedWaveDirectorSystem = true;
+    }
+  }
 
   try {
     if (LLM_PROVIDER === 'cohere') {
-      return await handleCohereChat(req, res, messages, wantsStream, isPlanner);
+      return await handleCohereChat(req, res, messages, wantsStream, isPlanner, isEvaluator);
     } else if (LLM_PROVIDER === 'google') {
-      return await handleGoogleChat(req, res, messages, wantsStream, isPlanner);
+      return await handleGoogleChat(req, res, messages, wantsStream, isPlanner, isEvaluator);
     } else {
-      return await handleOpenAIChat(req, res, messages, wantsStream, isPlanner);
+      return await handleOpenAIChat(req, res, messages, wantsStream, isPlanner, isEvaluator);
     }
   } catch (err) {
     const m = String(err || '');
@@ -262,19 +274,22 @@ app.post('/api/chat', async (req, res) => {
 // Planner-specific config: longer timeout, more output tokens.
 const PLANNER_TIMEOUT = 90000;
 const PLANNER_MAX_TOKENS = 4000;
+const EVALUATOR_TIMEOUT = 15000;
 
 // ---- OpenAI handler ----
-async function handleOpenAIChat(req, res, messages, wantsStream, isPlanner) {
+async function handleOpenAIChat(req, res, messages, wantsStream, isPlanner, isEvaluator) {
   if (!OPENAI_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing OPENAI_API_KEY' });
   }
 
-  // Planner uses longer timeout/tokens; scenes use defaults.
-  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : 60000;
+  // Planner uses longer timeout/tokens; scenes use defaults; evaluator uses shorter timeout.
+  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : (isEvaluator ? EVALUATOR_TIMEOUT : 60000);
   const effectiveMaxTokens = isPlanner ? PLANNER_MAX_TOKENS : MAX_COMPLETION_TOKENS;
 
   if (isPlanner) {
     console.log('[chat] OpenAI planner mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
+  } else if (isEvaluator) {
+    console.log('[chat] OpenAI evaluator mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
   } else {
     console.log('[chat] OpenAI provider', {
       model: MODEL,
@@ -349,17 +364,19 @@ async function handleOpenAIChat(req, res, messages, wantsStream, isPlanner) {
 }
 
 // ---- Cohere handler with fallback and provider fallback ----
-async function handleCohereChat(req, res, messages, wantsStream, isPlanner) {
+async function handleCohereChat(req, res, messages, wantsStream, isPlanner, isEvaluator) {
   if (!COHERE_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing COHERE_API_KEY' });
   }
 
-  // Planner uses longer timeout and more tokens.
-  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : COHERE_TIMEOUT;
+  // Planner uses longer timeout and more tokens; evaluator uses shorter.
+  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : (isEvaluator ? EVALUATOR_TIMEOUT : COHERE_TIMEOUT);
   const effectiveMaxTokens = isPlanner ? PLANNER_MAX_TOKENS : COHERE_MAX_TOKENS;
 
   if (isPlanner) {
     console.log('[chat] Cohere planner mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
+  } else if (isEvaluator) {
+    console.log('[chat] Cohere evaluator mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
   }
 
   const allModels = [COHERE_MODEL, ...COHERE_MODEL_FALLBACKS, ...COHERE_MODEL_LAST_RESORTS];
@@ -369,7 +386,7 @@ async function handleCohereChat(req, res, messages, wantsStream, isPlanner) {
     const currentModel = allModels[attempt];
     const isLastResort = attempt >= COHERE_MODEL_FALLBACKS.length + 1;
     // Use effective timeout: planner gets 90s, scenes get default.
-    const timeout = isPlanner ? effectiveTimeout : (isLastResort ? 60000 : COHERE_TIMEOUT);
+    const timeout = isPlanner ? effectiveTimeout : (isEvaluator ? EVALUATOR_TIMEOUT : (isLastResort ? 60000 : COHERE_TIMEOUT));
 
     if (!isPlanner) {
       console.log('[chat] Cohere provider', {
@@ -522,17 +539,19 @@ async function handleCohereStream(req, res, messages, body, apiKey, controller) 
 }
 
 // ---- Google handler with fallback support ----
-async function handleGoogleChat(req, res, messages, wantsStream, isPlanner) {
+async function handleGoogleChat(req, res, messages, wantsStream, isPlanner, isEvaluator) {
   if (!GOOGLE_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing GOOGLE_API_KEY' });
   }
 
-  // Planner uses longer timeout and more tokens.
-  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : GOOGLE_TIMEOUT;
+  // Planner uses longer timeout and more tokens; evaluator uses shorter.
+  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : (isEvaluator ? EVALUATOR_TIMEOUT : GOOGLE_TIMEOUT);
   const effectiveMaxTokens = isPlanner ? PLANNER_MAX_TOKENS : GOOGLE_MAX_TOKENS;
 
   if (isPlanner) {
     console.log('[chat] Google planner mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
+  } else if (isEvaluator) {
+    console.log('[chat] Google evaluator mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
   }
 
   const allModels = [GOOGLE_MODEL, ...GOOGLE_MODEL_FALLBACKS, ...GOOGLE_MODEL_LAST_RESORTS];
@@ -541,8 +560,8 @@ async function handleGoogleChat(req, res, messages, wantsStream, isPlanner) {
   for (let attempt = 0; attempt < allModels.length; attempt++) {
     const currentModel = allModels[attempt];
     const isLastResort = attempt >= GOOGLE_MODEL_FALLBACKS.length + 1;
-    // Use effective timeout: planner gets 90s, scenes get default.
-    const timeout = isPlanner ? effectiveTimeout : (isLastResort ? GOOGLE_LAST_RESORT_TIMEOUT : GOOGLE_TIMEOUT);
+    // Use effective timeout: planner gets 90s, evaluator gets 15s, scenes get default.
+    const timeout = isPlanner ? effectiveTimeout : (isEvaluator ? EVALUATOR_TIMEOUT : (isLastResort ? GOOGLE_LAST_RESORT_TIMEOUT : GOOGLE_TIMEOUT));
 
     const isStream = wantsStream ?? false;
 

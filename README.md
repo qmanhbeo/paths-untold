@@ -1,126 +1,110 @@
 # 🌌 Paths Untold
 
-**A Stateful, Human-in-the-Loop Narrative System for Long-Horizon Interaction**
+**An Experimental Long-Horizon Narrative Orchestration System**
 
 Paths Untold is not designed to generate stories, but to sustain them.
 
-Rather than treating an LLM as a one-shot storyteller, it frames narrative generation as a **long-horizon control problem**: each scene must remain coherent with accumulated history, character identity, emotional state, and player interventions. Over time, the system does not just respond to player actions — it begins to reflect patterns in those actions, allowing the player to encounter a version of themselves shaped through choice, consequence, and memory.
+It treats interactive storytelling as a **control problem**: each scene is generated against a structured blueprint, evaluated against its intended role, and updated through stateful memory. Rather than treating an LLM as a one-shot storyteller, it frames narrative generation as a **long-horizon orchestration** — where scenes have assigned dramatic functions (open, build, resolve, cooldown), pressure targets, and post-generation quality observation.
 
-At the same time, it is designed to be *pleasant to play*: calm pacing, evocative writing, and a warm interface where choices matter and characters feel remembered.
+The system is a research prototype exploring how directed pacing, explicit wave roles, and feedback-based evaluation can create coherent, controllable long-form narrative interaction.
 
 ---
 
 ## ✨ What This Project Is
 
-Paths Untold is both:
+Paths Untold sits at the intersection of **systems design** and **interactive storytelling**:
 
-* **A research-oriented LLM system** for studying memory, coherence, and human–AI interaction
-* **A narrative game** where players shape a living story through meaningful choices
+* **A research-oriented narrative engine** — studying memory, coherence, directed pacing, and human–AI interaction through the lens of game-logic orchestration
+* **A quiet choice-driven story game** — where choices are interventions, characters remember, and pacing has visible structure
 
-It intentionally sits at the intersection of **systems design** and **interactive storytelling**.
-
----
-
-## 🌱 What This Enables
-
-Traditional stories are fixed.
-Branching stories simulate variation.
-
-Paths Untold explores something else: a narrative that evolves with the player over time, where meaning is not prewritten but emerges from interaction. The result is not just different outcomes, but different interpretations — stories that feel personally shaped rather than selected.
-
-A central challenge is balancing **stability and drift**: preserving identity and causality over time without reducing the system to repetition or allowing it to dissolve into incoherence. That tension is the core research problem.
+It is modular by design: Planner → Wave Director → Writer → Evaluator → Memory.
 
 ---
 
-## 🧠 System Overview (Under the Hood)
+## 🌊 Narrative Pressure & Wave Direction
 
-At its core, Paths Untold is a **stateful LLM environment** with three tightly coupled components:
+Scenes are not isolated generations. Each scene has a **wave role** that determines its intended dramatic behavior:
 
-### 1. Prompt Compilation (Not Just Prompting)
+| Wave Role | Intended Behavior |
+|----------|------------------|
+| **open** | Establish situation, stakes, and curiosity |
+| **build** | Complicate tension, increase uncertainty |
+| **resolve** | Pay off tension, create irreversible change |
+| **cooldown** | Process consequences, reduce pressure |
 
-Each generation step is produced from a *unified prompt* that explicitly encodes:
+Wave roles are assigned by the Story Blueprint (a long-term narrative plan with arcs, chapters, and scene waves). The **Wave Director** converts these assignments into explicit behavioral guidance for the LLM:
 
-* Current narrative context (location, time, objectives, scene tags)
-* Persistent character memory (traits, relationships, emotions)
-* A structured causal scene log — what happened, what changed, what was revealed — rather than raw prose
-* The player's most recent action
+```
+Scene wave role: build — shape this scene to match that role exactly.
+Target tension: 6/10 — escalate but do not reach breaking point.
+```
 
-This turns free-form generation into a **controlled transformation of world state**.
-
----
-
-### 2. Structured Output & Parsing
-
-LLM responses are parsed into a constrained schema containing:
-
-* Narrative text
-* Discrete player action options
-* Updated character traits and emotional deltas
-* Scene-level summaries for memory compression
-
-This enforces a **contract** between the model and the system, making failures observable and debuggable rather than hidden inside prose.
+This creates **rhythm** — the model is asked to perform a narrative function, not merely "write the next scene."
 
 ---
 
-### 3. Human-in-the-Loop Control
+## 📊 Narrative Evaluation Layer
 
-The player functions as an external decision-maker, not a user:
+After scene generation, **Narrative Evaluator v0** scores whether the scene matched its intended role:
 
-* Each choice represents an intervention in the system
-* Actions feed back into persistent memory and future generations
-* Small decisions accumulate into long-term narrative divergence
+| Dimension | What It Measures |
+|-----------|----------------|
+| **waveMatch** | How well the scene fulfills its assigned wave role |
+| **continuity** | Logical flow from previous scene and player choice |
+| **stakesProgression** | Whether tension/pressure moved appropriately |
+| **choiceFit** | Whether player choices are immediate, grounded, distinct |
+| **mysteryControl** | Whether information was revealed/withheld appropriately |
 
-Interaction is treated as **sequential control**, not simple input.
+Scoring scale: 0–10 (where 7+ is good, 4–6 is ok, 0–3 is low).
+
+The evaluator is currently **observational, not blocking** — it does not regenerate scenes or reject outputs. It enables future feedback loops and drift detection.
 
 ---
 
-## 🎮 The Game Experience
+## 🧠 Modular Narrative Architecture
 
-From the player's perspective, Paths Untold is a quiet, choice-driven story game:
+```
+Planner → Blueprint (arcs, chapters, scene waves)
+         ↓
+Wave Director → scene guidance (wave role, targets)
+         ↓
+Scene Writer → prose + choices
+         ↓
+Schema Parser → structured output
+         ↓
+Narrative Evaluator → quality scores
+         ↓
+World State Update → memory + continuity
+         ↺
+Player Choice → intervenes in state
+```
 
-* Each scene presents a short narrative moment
-* Choices appear only when the story earns them — and only in the form that fits (pick from options, a binary commitment, your own words, or none)
-* Choices are expressed as concise actions rather than descriptive summaries, so the player's intention — not the system's narration — drives the moment
-* Characters remember what you do and how you treat them
-* Emotional tone shifts subtly over time
+Each component is explicit:
 
-There are no timers, no scores, and no "correct" paths — only unfolding consequences.
+* **Story Blueprint Planner** — async, background-generated long-term narrative plan
+* **Wave Director** — converts blueprint wave/targets into scene-level prompts
+* **Scene Writer** — produces prose and player choices
+* **Narrative Evaluator** — scores generated scenes post-hoc
+* **Memory / Scene Log** — causal continuity (last 5 scenes stored as structured records)
+* **Dev Codex / Blueprint Map** — visualizes blueprint and runtime state (F2 to toggle)
 
 ---
 
 ## 🧩 Core Features
 
-* **Dynamic scene-by-scene storytelling** powered by LLMs
-* **Persistent character memory** (traits, relationships, emotional states)
-* **Nested narrative pacing** — Arc planner (macro: open→build→peak→resolve across chapters) feeds Chapter planner (micro: open→build→resolve→cooldown), which shapes individual scenes (mini: ground→shift→decide). The story has a spine.
-* **Five tension modes + resolution + cooldown** — named scene modes (quiet / unease / pressure / breaking_point / catastrophe) drive scene shape, choice type, and consequence weight. Resolution fires automatically when the story has earned a payoff but isn't delivering one. Cooldown follows every resolved chapter arc.
-* **Causal scene log** — the last 5 scenes are stored as structured records (what happened, what changed, what was revealed, what was resolved) rather than raw prose; the LLM sees the causal chain, not just the texture
-* **Choice Director** — choices are conditional: scenes can produce paths, a binary threshold, free-text input, or no choice at all, depending on what the narrative moment earns
-* **Concise choice language** — choices are immediate actions or stances, not branch descriptions; the scene carries the atmosphere, the choice carries the decision
-* **Deferred identity** — the player's name is only requested when the story genuinely earns it (signing a document, a formal introduction, a deepening relationship)
-* **Discrete action space** for meaningful player intervention
-* **Save / Load system** with multiple slots
-* **Frontend + backend in one command**
-* **Cozy UI** with Tailwind CSS, animated text, and atmospheric backgrounds
-
----
-
-## 🏗 Architecture Overview
-
-```
-Human Choice
-     ↓
-State Update (Memory, Emotion, History)
-     ↓
-Prompt Compilation
-     ↓
-LLM Generation
-     ↓
-Schema Parsing & Validation
-     ↓
-World State Update
-     ↺
-```
+* **Async Story Blueprint planning** — background-generated narrative structure
+* **Scene 0 cold start** — background planner runs after opening scene
+* **Wave-directed pacing** — open/build/resolve/cooldown scene roles
+* **Narrative pressure targets** — tension, intimacy, mystery, choiceHarshness, pacing, revelation
+* **Structured scene schema** — enforces contract between model and system
+* **Causal scene log** — last 5 scenes as structured records (event, stateChange, reveals, resolvedThreads)
+* **Choice Director** — conditional choice types: paths, threshold, free-text, or none
+* **Narrative Evaluator v0** — observational scoring (does not block regeneration)
+* **Dev Codex / Blueprint Map inspector** — F2 key to visualize blueprint state
+* **Cohere provider** with model fallback (command-a-03-2025 → command-r-plus-08-2024)
+* **Multi-provider support** — OpenAI, Cohere, Google via server proxy
+* **Separate scene schemas** — opening vs. follow-up scene contracts
+* **Deferred identity** — player name requested only when narrative earns it
 
 ---
 
@@ -140,20 +124,24 @@ cd paths-untold
 #### Backend (`/server/.env`)
 
 ```env
-OPENAI_API_KEY=sk-...your key...
-UPSTREAM_URL=https://api.openai.com/v1/chat/completions
-MODEL=gpt-5-nano
-PORT=5174
+# Provider: openai, google, or cohere
+LLM_PROVIDER=cohere
+COHERE_API=your-cohere-key
+COHERE_MODEL=command-a-03-2025
+COHERE_MODEL_FALLBACKS=command-r-plus-08-2024
+COHERE_MAX_TOKENS=1600
+COHERE_TIMEOUT=30000
+PORT=5175
 ```
 
 #### Frontend (root `.env`)
 
 ```env
-VITE_API_BASE=http://localhost:5174/api
-VITE_LLM_MODEL=gpt-5-nano
+VITE_API_BASE=http://localhost:5175/api
+VITE_LLM_MODEL=command-a-03-2025
 ```
 
-⚠️ **Important**: Keep your API key only in `/server/.env`. The frontend `.env` must never contain secrets.
+⚠️ **Important**: Keep API keys only in `/server/.env`. The frontend `.env` must never contain secrets.
 
 ---
 
@@ -175,7 +163,7 @@ npm run dev
 By default:
 
 * Game UI: [http://localhost:3000](http://localhost:3000)
-* API proxy: [http://localhost:5174](http://localhost:5174)
+* API proxy: [http://localhost:5175](http://localhost:5175)
 
 ---
 
@@ -183,8 +171,8 @@ By default:
 
 * **Frontend**: React, Vite, Tailwind CSS, React Hooks
 * **Backend**: Express, native `fetch`, CORS, zod (schema validation)
-* **AI Integration**: OpenAI API via secure server proxy
-* **State & Memory**: Custom managers for narrative state, character memory, and emotion tracking
+* **AI Integration**: Cohere (primary), OpenAI, Google — via server proxy with provider routing and fallback
+* **State & Memory**: Custom managers for narrative state, character memory, scene log, and emotion tracking
 * **Testing**: Vitest + Testing Library
 
 ---
@@ -192,12 +180,16 @@ By default:
 ## 📂 Project Structure
 
 ```
-/components                     → UI components (GameScreen, StartScreen, etc.)
-/components/GameScreenComponents → ChoiceGrid, HeaderBar, StoryDisplay
-/utils                          → Core logic (AI orchestration, memory, parsing)
-/server                         → Express proxy (API key isolation)
-/images                         → Backgrounds and UI assets
-/public                         → Logos, manifest, icons
+/src                         → React frontend
+  /components                 → UI (GameScreen, StartScreen, Dev Codex)
+  /components/GameScreenComponents → ChoiceGrid, HeaderBar, StoryDisplay
+  /components/dev            → Inspector, BlueprintMapView
+  /state                     → updateFromAIPacket, narrativeGraph, applyDeltas
+  /utils                     → buildUnifiedPrompt, buildNarrativeEvaluatorPrompt
+  /services                  → llmClient
+/server                      → Express proxy (provider routing)
+/images                      → Backgrounds and UI assets
+/public                      → Logos, manifest, icons
 ```
 
 ---
@@ -208,10 +200,10 @@ Most LLM applications optimize for single-turn quality.
 
 Paths Untold instead asks:
 
-* How do models maintain identity over long horizons?
-* How should memory be compressed without erasing causality?
-* What failure modes emerge when narrative, emotion, and state drift?
-* How does human intervention stabilize or destabilize generative trajectories?
+* How do models maintain identity over long horizons under directed pacing?
+* How should wave roles and pressure targets influence scene generation?
+* How does post-generation evaluation enable feedback loops?
+* What failure modes emerge when narrative orchestration and human intervention interact?
 
 The narrative domain makes these questions *legible* and *human-scale*.
 
@@ -219,25 +211,52 @@ The narrative domain makes these questions *legible* and *human-scale*.
 
 ## 🐉 Status
 
-**Beta / research prototype**
+**Active experimental narrative engine / research prototype**
 
-Expect occasional parsing quirks and long generation times.
+Current architecture is functional:
+- Story Blueprint planning works (async, background)
+- Wave-directed scene generation works
+- Narrative Evaluator v0 runs after each scene
+- Dev Codex inspector visualizes blueprint state
 
-Planned improvements include:
-
-* Streaming story text
-* Stronger schema guarantees and recovery logic
-* Expanded character lifecycle and relationship modeling
-* Instrumentation for failure-mode analysis (tension curve, beat completion rate, resolution trigger frequency)
-
-See [`narrative-study/`](narrative-study/) for design notes and session change logs.
+Known limitations:
+- Evaluator scores are observational (not yet used for regeneration)
+- Blueprint advancement is currently deterministic
+- Schema recovery is still evolving
+- Generation speed depends on provider/model latency
 
 ---
 
-Paths Untold is intentionally exploratory.
+## 🛣 Roadmap
 
-It is meant to be both a **quiet game** and a **serious experiment** — a place where stories unfold, and where long-horizon human–AI interaction can be observed, questioned, and understood.
+### Implemented
+- [x] Stateful scene memory
+- [x] Structured scene schema
+- [x] Causal scene log
+- [x] Async Story Blueprint planner
+- [x] Wave-directed pacing (open/build/resolve/cooldown)
+- [x] Narrative pressure targets
+- [x] Narrative Evaluator v0
+- [x] Dev Codex / Blueprint Map inspector
+- [x] Cohere provider routing and fallbacks
 
+### Near-Term
+- [ ] Normalize evaluator scoring consistently (0–10)
+- [ ] Persist evaluator scores per scene
+- [ ] Drift detection between player actions and blueprint
+- [ ] Persistent narrative forces/tensions
+- [ ] Better schema repair and recovery
+- [ ] Cleaner model routing per role: planner / writer / evaluator
+
+### Future Research
+- [ ] Elastic blueprint reinterpretation
+- [ ] Evaluator-informed regeneration
+- [ ] Companion-specific emotional simulation
+- [ ] Dynamic emotional UI/prose modulation
+- [ ] Long-term thematic memory
+- [ ] Multi-agent narrative orchestration
+
+---
 
 ## 👀 Visual Preview
 
@@ -288,4 +307,5 @@ Consequences accumulate across scenes, maintaining tone, character identity, and
 ---
 
 The visuals are intentionally restrained.
+
 The focus is on **reading, choosing, and being remembered** — not spectacle.

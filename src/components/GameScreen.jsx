@@ -3,6 +3,8 @@ import { generateScene } from '../utils/AI-chat';
 import { createDebugLogger } from '../utils/debugLog';
 import { saveGameToSlot } from '../utils/saveSystem';
 import { buildScenePrompt } from '../utils/buildUnifiedPrompt';
+import { buildNarrativeEvaluatorPrompt } from '../utils/buildNarrativeEvaluatorPrompt';
+import { getCurrentSceneWaveRole } from '../utils/storyBlueprintPlanner';
 import { planStoryBlueprint } from '../utils/storyBlueprintPlanner';
 import { planChapter } from '../utils/chapterPlanner';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
@@ -32,6 +34,8 @@ import './styles.css';
 import backgroundImage from '../images/background-black.jpg';
 
 const debug = createDebugLogger('GameScreen');
+
+const DEBUG_FULL_PROMPTS = false;  // Set to true to dump full prompts (verbose)
 
 const createFreshMemory = () => ({
   summary: [],
@@ -177,7 +181,13 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           { role: 'system', content: openingSys },
           { role: 'user', content: openingUser },
         ];
-        debug.log('[PROMPT 0]', openingUser);
+        if (DEBUG_FULL_PROMPTS) {
+          debug.log('[PROMPT 0]', openingUser);
+        }
+        debug.log('[scene] opening', {
+          genres: storyOptions?.selectedGenres?.slice(0, 2),
+          wave: storyOptions?.selectedTone
+        });
 
         const rawAI0 = await generateScene(openingMessages);
         await handleSceneResponse(rawAI0, {
@@ -230,6 +240,98 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     }
   }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Narrative Evaluator - runs after scene generation, non-blocking
+  // Receives pre-captured evaluationContext to evaluate against the wave that was actually used for generation
+  const runNarrativeEvaluator = async (memState, scenePacket, choice, evaluationContext) => {
+    if (!import.meta.env.DEV) return;
+
+    // Guard: skip if no blueprint context was captured
+    if (!evaluationContext?.sceneWaveRole || !evaluationContext?.blueprintChapterNode) {
+      debug.log('[evaluator] skipped: no blueprint context');
+      return;
+    }
+
+    debug.log('[evaluator] invoked');
+    debug.log('[evaluator] using captured wave:', evaluationContext.sceneWaveRole);
+
+    // Use pre-captured context instead of recomputing from mutated memory
+    const waveRole = evaluationContext.sceneWaveRole;
+    const currentChapter = evaluationContext.blueprintChapterNode;
+
+    const evaluatorPrompt = buildNarrativeEvaluatorPrompt({
+      memory: memState,
+      generatedScene: scenePacket,
+      sceneWaveRole: waveRole,
+      blueprintChapterNode: currentChapter,
+      latestChoice: choice
+    });
+
+    // Build messages array for generateScene
+    const evaluatorMessages = [
+      { role: 'system', content: evaluatorPrompt.system },
+      { role: 'user', content: evaluatorPrompt.user }
+    ];
+
+    debug.log('[evaluator] dev mode: true, wave:', waveRole);
+
+    const startTime = performance.now();
+    try {
+      debug.log('[evaluator] calling generateScene');
+      const rawResult = await generateScene(evaluatorMessages, null, { isEvaluator: true });
+      const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+
+      // Extract content from provider-shaped response
+      const content =
+        rawResult?.choices?.[0]?.message?.content ??
+        rawResult?.message?.content ??
+        rawResult?.content ??
+        (typeof rawResult === 'string' ? rawResult : null);
+
+      // Parse evaluator result
+      let evalResult = null;
+      try {
+        if (content) {
+          const parsed = JSON.parse(content);
+          // Check for expected shape
+          if (parsed && typeof parsed.waveMatch === 'number') {
+            evalResult = parsed;
+          } else {
+            debug.log('[evaluator] unexpected shape:', parsed);
+          }
+        }
+      } catch {
+        debug.warn('[evaluator] failed parse');
+      }
+
+      if (evalResult) {
+        debug.log('[evaluator] parsed scores:', {
+          waveMatch: evalResult.waveMatch,
+          continuity: evalResult.continuity,
+          stakesProgression: evalResult.stakesProgression,
+          choiceFit: evalResult.choiceFit,
+          mysteryControl: evalResult.mysteryControl,
+          notes: evalResult.notes
+        });
+        // Store evaluation in game memory for inspector display
+        setGameMemory(prev => ({
+          ...prev,
+          _lastEvaluation: evalResult
+        }));
+      } else {
+        debug.log('[evaluator] unexpected shape keys:', Object.keys(parsed || {}));
+        debug.log('[evaluator] unexpected shape:', JSON.stringify(parsed).slice(0, 300));
+      }
+    } catch (e) {
+      const isAbort = e.name === 'AbortError' || String(e).includes('AbortError');
+      const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+      if (isAbort) {
+        debug.log('[evaluator] aborted after', duration + 's');
+      } else {
+        debug.log('[evaluator] failed after', duration + 's', e.message || e);
+      }
+    }
+  };
+
   useEffect(() => {
     sessionStorage.setItem('gameMemory', JSON.stringify(gameMemory));
   }, [gameMemory]);
@@ -278,7 +380,10 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     const rawOutputText =
       typeof rawAIX === 'string' ? rawAIX : JSON.stringify(rawAIX, null, 2);
 
-    debug.log(`[RAW AI OUTPUT - Scene ${sceneIdx}]`, rawAIX);
+    if (DEBUG_FULL_PROMPTS) {
+      debug.log(`[RAW AI OUTPUT - Scene ${sceneIdx}]`, rawAIX);
+    }
+    debug.log('[scene] raw', { scene: sceneIdx, chars: rawOutputText?.length });
     setDisplayedPaths([]);
     setRawOutput(rawOutputText);
 
@@ -306,6 +411,22 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         setNamePromptText(obj.identityRequirement.promptText || '');
         setShowNameInput(true);
       }
+
+      // Capture evaluator context BEFORE memory mutation / blueprint advancement
+      const evaluationContext = {
+        sceneWaveRole: getCurrentSceneWaveRole(baseMemory?.arc?.storyBlueprint) ?? null,
+        blueprintChapterNode: (() => {
+          const bp = baseMemory?.arc?.storyBlueprint;
+          if (!bp) return null;
+          const arcIdx = bp.currentArcIndex ?? 0;
+          const chIdx = bp.arcs?.[arcIdx]?.currentChapterIndex ?? 0;
+          return bp.arcs?.[arcIdx]?.chapters?.[chIdx] ?? null;
+        })()
+      };
+
+      // Run evaluator in background (non-blocking)
+      // Pass pre-captured context to evaluate against the wave that was actually used
+      runNarrativeEvaluator(nextMem, obj, choice, evaluationContext).catch(() => {});
 
       return {
         prose: obj.prose,
@@ -408,7 +529,14 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     const { system: branchSys, user: branchUser } = buildScenePrompt(baseMemory, choice, { ...storyOptions, playerName });
     const branchMessages = [{ role: 'system', content: branchSys }, { role: 'user', content: branchUser }];
 
-    debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchUser);
+    if (DEBUG_FULL_PROMPTS) {
+      debug.log(`[PROMPT FOR SCENE ${nextSceneIndex}]`, branchUser);
+    }
+    debug.log('[scene] next', {
+      scene: nextSceneIndex,
+      location: baseMemory?.world?.location?.name,
+      choice: choice?.slice(0, 40)
+    });
 
     await generateScene(branchMessages, async (nextScene) => {
       await handleSceneResponse(nextScene, {

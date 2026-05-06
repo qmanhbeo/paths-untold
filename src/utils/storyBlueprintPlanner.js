@@ -203,10 +203,10 @@ export async function planStoryBlueprint(playerIntro, generateFn) {
     const parsed = JSON.parse(text.trim());
     const blueprint = normalizeBlueprint(parsed);
 
-    // Dev-only: inspect raw and normalized blueprint output.
+    // Dev-only: small logs only (JSON dumps are too large)
     if (import.meta.env.DEV) {
-      console.log('[planner] raw blueprint JSON:', text);
-      console.log('[planner] normalized blueprint:', JSON.stringify(blueprint, null, 2));
+      // console.log('[planner] raw blueprint JSON:', text);
+      // console.log('[planner] normalized blueprint:', JSON.stringify(blueprint, null, 2));
     }
 
     if (blueprint) {
