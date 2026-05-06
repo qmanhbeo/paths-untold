@@ -172,12 +172,14 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
         const storyBlueprint = await planStoryBlueprint(storyOptions, generateScene);
         let memWithPlan;
         if (storyBlueprint) {
+          debug.log('[planStoryBlueprint] success: using blueprint');
           memWithPlan = {
             ...initialMemory,
             arc: { ...initialMemory.arc, storyBlueprint }
           };
         } else {
           // Fallback: legacy per-chapter planning
+          debug.log('[planStoryBlueprint] failed: falling back to legacy chapterPlanner');
           const chapterPlan = await planChapter(storyOptions, initialMemory.arc, generateScene);
           memWithPlan = chapterPlan
             ? { ...initialMemory, arc: { ...initialMemory.arc, chapterPlan } }
@@ -350,17 +352,30 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
     setIsLoading(true);
 
     let baseMemory = createMemorySnapshot(memoryRef.current);
+    const sceneIdx = baseMemory.sceneIndex ?? 0;
 
-    // Re-plan chapter only when running without a Story Blueprint (legacy fallback or old save).
-    // When a blueprint is present, chapter transitions are handled automatically by
-    // applyDeltas advancing the blueprint position — no extra LLM call needed.
+    const hasBlueprint = !!baseMemory.arc?.storyBlueprint;
+    const hasChapterPlan = !!baseMemory.arc?.chapterPlan;
+    const isEarlyScene = sceneIdx < 3;
+
+    const shouldReplan = !hasBlueprint && !hasChapterPlan && !isEarlyScene;
+
     if (!baseMemory.arc?.storyBlueprint && baseMemory.arc?.chapterPlan === null) {
-      const newChapterPlan = await planChapter(storyOptions, baseMemory.arc, generateScene);
-      if (newChapterPlan) {
-        baseMemory = { ...baseMemory, arc: { ...baseMemory.arc, chapterPlan: newChapterPlan } };
-        setGameMemory(baseMemory);
-        memoryRef.current = baseMemory;
+      if (isEarlyScene) {
+        debug.log('[chapterPlanner] skipped: early scene', { sceneIdx });
+      } else {
+        debug.log('[chapterPlanner] called: no blueprint, no chapterPlan', { sceneIdx });
+        const newChapterPlan = await planChapter(storyOptions, baseMemory.arc, generateScene);
+        if (newChapterPlan) {
+          baseMemory = { ...baseMemory, arc: { ...baseMemory.arc, chapterPlan: newChapterPlan } };
+          setGameMemory(baseMemory);
+          memoryRef.current = baseMemory;
+        }
       }
+    } else if (hasBlueprint) {
+      debug.log('[chapterPlanner] skipped: using blueprint', { sceneIdx });
+    } else if (hasChapterPlan) {
+      debug.log('[chapterPlanner] skipped: existing chapterPlan', { sceneIdx });
     }
 
     const nextSceneIndex = (baseMemory.sceneIndex ?? 0) + 1;

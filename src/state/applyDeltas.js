@@ -58,8 +58,16 @@ export function applyDeltas(mem, out) {
     // When a blueprint is active this replaces the LLM-driven chapter re-planning:
     // the pre-planned wave structure drives pacing; no extra planning LLM call is made.
     const blueprint = mem.arc.storyBlueprint;
+    const currentSceneIdx = mem.sceneIndex ?? 0;
+    const isTooEarlyToAdvance = currentSceneIdx < 2;
+
     if (blueprint) {
       advanceBlueprintPosition(blueprint, mem);
+    } else if ((dArc.chapter ?? 0) > 0 && isTooEarlyToAdvance) {
+      // Guard: reject chapter change before scene 2 to allow thread to establish
+      console.log('[applyDeltas] blocked legacy chapter advance: too early', { sceneIndex: currentSceneIdx });
+      // Still clear chapterPlan to prevent later confusion, but don't advance chapter
+      mem.arc.chapterPlan = null;
     } else if ((dArc.chapter ?? 0) > 0) {
       // Legacy (no blueprint): LLM signal drives chapter advancement
       mem.arc.chapter = (mem.arc.chapter ?? 1) + 1;
