@@ -309,3 +309,118 @@ Consequences accumulate across scenes, maintaining tone, character identity, and
 The visuals are intentionally restrained.
 
 The focus is on **reading, choosing, and being remembered** — not spectacle.
+
+
+
+
+
+
+
+
+# Final notes to self:
+
+Yes. That’s the right architecture.
+
+The key shift is:
+
+```txt
+wave position should not advance because “one scene happened”
+wave position should advance because “the dramatic job was accomplished”
+```
+
+Right now:
+
+```txt
+scene count drives structure
+```
+
+What you want:
+
+```txt
+narrative evidence drives structure
+```
+
+Better loop:
+
+```txt
+Player choice
+↓
+Scene Writer generates scene using current wave directive
+↓
+Evaluator checks scene against current wave + chapter mustResolve + targets
+↓
+Reconciliation layer decides:
+  - advance wave
+  - stay on wave
+  - intensify next prompt
+  - mark partial progress
+↓
+Memory/Blueprint position updates
+```
+
+So evaluator should output not just scores, but **control advice**:
+
+```json
+{
+  "waveMatch": 8,
+  "continuity": 9,
+  "stakesProgression": 7,
+  "choiceFit": 8,
+  "mysteryControl": 7,
+  "chapterProgress": 5,
+  "shouldAdvanceWave": true,
+  "shouldAdvanceChapter": false,
+  "reconciliationHint": "Next scene should deepen the revealed threat before resolving it.",
+  "notes": "The scene established curiosity and introduced pressure without resolving the chapter."
+}
+```
+
+Then advancement logic becomes:
+
+```txt
+open → build
+when situation + stakes + curiosity are established
+
+build → resolve
+when complication/tension has clearly intensified
+
+resolve → cooldown
+when chapter mustResolve is substantially addressed
+
+cooldown → next chapter
+when consequence/reflection has landed
+```
+
+The planner already supplies:
+
+* chapter purpose
+* mustResolve
+* sceneWave
+* targets
+* core question
+* tension axes
+
+So yes: the materials are there. Missing piece is the **reconciliation controller**.
+
+Next safe patch should be inspection-only:
+
+```txt
+Find current advanceBlueprintPosition()
+Explain exact advancement logic.
+Design evaluator-advised advancement without implementing mutation yet.
+```
+
+Then patch v1:
+
+```txt
+Evaluator returns shouldAdvanceWave + reconciliationHint.
+System still auto-advances for now, but logs disagreement.
+```
+
+Then patch v2:
+
+```txt
+If evaluator says no, hold wave position and feed reconciliationHint into next prompt.
+```
+
+That’s the path. Don’t let the critic grab the steering wheel immediately. Let it ride shotgun first.
