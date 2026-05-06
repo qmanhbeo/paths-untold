@@ -19,14 +19,53 @@ const REASONING_EFFORT =
 // ---- Google Config ----
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_MODEL = process.env.GOOGLE_MODEL || 'gemini-2.5-flash-lite';
+const GOOGLE_MODEL_FALLBACKS = (process.env.GOOGLE_MODEL_FALLBACKS || '').split(',').filter(Boolean);
+const GOOGLE_MODEL_LAST_RESORTS = (process.env.GOOGLE_MODEL_LAST_RESORTS || '').split(',').filter(Boolean);
 const GOOGLE_MAX_TOKENS = Number(process.env.GOOGLE_MAX_TOKENS || 1600);
+const GOOGLE_TIMEOUT = Number(process.env.GOOGLE_TIMEOUT || 30000);
+const GOOGLE_LAST_RESORT_TIMEOUT = Number(process.env.GOOGLE_LAST_RESORT_TIMEOUT || 60000);
+
+const RETRYABLE_HTTP_CODES = new Set([429, 500, 502, 503, 504]);
+
+// ---- Cohere Config ----
+const COHERE_API_KEY = process.env.COHERE_API;  // Note: .env uses COHERE_API
+const COHERE_MODEL = process.env.COHERE_MODEL || 'command-r-plus-08-2024';
+const COHERE_MODEL_FALLBACKS = (process.env.COHERE_MODEL_FALLBACKS || '').split(',').filter(Boolean);
+const COHERE_MODEL_LAST_RESORTS = (process.env.COHERE_MODEL_LAST_RESORTS || '').split(',').filter(Boolean);
+const COHERE_MAX_TOKENS = Number(process.env.COHERE_MAX_TOKENS || 1600);
+const COHERE_TIMEOUT = Number(process.env.COHERE_TIMEOUT || 30000);
+const ENABLE_PROVIDER_FALLBACK = process.env.ENABLE_PROVIDER_FALLBACK === 'true';
 
 // ---- Unified Config for Health ----
-const ACTIVE_MODEL = LLM_PROVIDER === 'google' ? GOOGLE_MODEL : MODEL;
+const ACTIVE_MODEL =
+  LLM_PROVIDER === 'google'
+    ? GOOGLE_MODEL
+    : LLM_PROVIDER === 'cohere'
+      ? COHERE_MODEL
+      : MODEL;
 
 // ---- simple health check
 app.get('/health', (req, res) => {
-  res.json({ ok: true, provider: LLM_PROVIDER, model: ACTIVE_MODEL });
+  if (LLM_PROVIDER === 'cohere') {
+    res.json({
+      ok: true,
+      provider: LLM_PROVIDER,
+      model: COHERE_MODEL,
+      fallbacks: COHERE_MODEL_FALLBACKS,
+      lastResorts: COHERE_MODEL_LAST_RESORTS,
+      googleFallback: ENABLE_PROVIDER_FALLBACK
+    });
+  } else if (LLM_PROVIDER === 'google') {
+    res.json({
+      ok: true,
+      provider: LLM_PROVIDER,
+      model: GOOGLE_MODEL,
+      fallbacks: GOOGLE_MODEL_FALLBACKS,
+      lastResorts: GOOGLE_MODEL_LAST_RESORTS
+    });
+  } else {
+    res.json({ ok: true, provider: LLM_PROVIDER, model: ACTIVE_MODEL });
+  }
 });
 
 // ---- input validation
@@ -138,6 +177,59 @@ function extractGoogleResponse(data) {
   return typeof text === 'string' ? text : '';
 }
 
+// ---- Cohere builders ----
+function buildCohereBody(messages, stream = false) {
+  const systemMessages = messages.filter(m => m.role === 'system');
+  const nonSystemMessages = messages.filter(m => m.role !== 'system');
+
+  const msgs = nonSystemMessages.map((msg) => ({
+    role: msg.role === 'assistant' ? 'assistant' : 'user',
+    content: msg.content
+  }));
+
+  if (msgs.length === 0 && systemMessages.length > 0) {
+    return {
+      messages: [{ role: 'user', content: systemMessages[0].content }],
+      response_format: { type: 'json_object' },
+      temperature: 0.7,
+      max_tokens: COHERE_MAX_TOKENS
+    };
+  }
+
+  const firstUserIdx = msgs.findIndex(c => c.role === 'user');
+  if (firstUserIdx !== -1 && systemMessages.length > 0) {
+    const systemPrompt = systemMessages.map(m => m.content).join('\n\n');
+    msgs[firstUserIdx] = {
+      role: 'user',
+      content: systemPrompt + '\n\n' + msgs[firstUserIdx].content
+    };
+  }
+
+  const isReasoningModel = COHERE_MODEL.includes('reasoning') || COHERE_MODEL.includes('r7b');
+
+  const body = {
+    messages: msgs,
+    response_format: { type: 'json_object' },
+    temperature: 0.7,
+    max_tokens: COHERE_MAX_TOKENS
+  };
+
+  if (isReasoningModel) {
+    body.thinking = { type: 'disabled' };
+  }
+
+  return body;
+}
+
+function extractCohereResponse(data) {
+  const content = data?.message?.content;
+  if (Array.isArray(content)) {
+    const textPart = content.find(c => c.type === 'text');
+    return textPart?.text || '';
+  }
+  return '';
+}
+
 // ---- Main chat endpoint ----
 app.post('/api/chat', async (req, res) => {
   const parsed = ChatSchema.safeParse(req.body);
@@ -148,7 +240,9 @@ app.post('/api/chat', async (req, res) => {
   const { messages, stream: wantsStream } = parsed.data;
 
   try {
-    if (LLM_PROVIDER === 'google') {
+    if (LLM_PROVIDER === 'cohere') {
+      return await handleCohereChat(req, res, messages, wantsStream);
+    } else if (LLM_PROVIDER === 'google') {
       return await handleGoogleChat(req, res, messages, wantsStream);
     } else {
       return await handleOpenAIChat(req, res, messages, wantsStream);
@@ -241,69 +335,274 @@ async function handleOpenAIChat(req, res, messages, wantsStream) {
   }
 }
 
-// ---- Google handler ----
+// ---- Cohere handler with fallback and provider fallback ----
+async function handleCohereChat(req, res, messages, wantsStream) {
+  if (!COHERE_API_KEY) {
+    return res.status(500).json({ error: 'Server misconfigured: missing COHERE_API_KEY' });
+  }
+
+  const allModels = [COHERE_MODEL, ...COHERE_MODEL_FALLBACKS, ...COHERE_MODEL_LAST_RESORTS];
+  let lastError = null;
+
+  for (let attempt = 0; attempt < allModels.length; attempt++) {
+    const currentModel = allModels[attempt];
+    const isLastResort = attempt >= COHERE_MODEL_FALLBACKS.length + 1;
+    const timeout = isLastResort ? 60000 : COHERE_TIMEOUT;
+
+    console.log('[chat] Cohere provider', {
+      model: currentModel,
+      attempt: attempt + 1,
+      total: allModels.length,
+      fallback: attempt > 0,
+      lastResort: isLastResort,
+      messages: messages.length,
+      max_tokens: COHERE_MAX_TOKENS,
+      stream: wantsStream ?? false
+    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const isReasoningModel = currentModel.includes('reasoning') || currentModel.includes('r7b');
+
+      const body = {
+        model: currentModel,
+        messages: messages.filter(m => m.role !== 'system').map(m => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        })),
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: COHERE_MAX_TOKENS
+      };
+
+      if (isReasoningModel) {
+        body.thinking = { type: 'disabled' };
+      }
+
+      if (wantsStream) {
+        return await handleCohereStream(req, res, messages, body, COHERE_API_KEY, controller);
+      }
+
+      const upstreamRes = await fetch('https://api.cohere.com/v2/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${COHERE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      clearTimeout(timer);
+
+      if (!upstreamRes.ok) {
+        const status = upstreamRes.status;
+        const text = await upstreamRes.text().catch(() => '');
+
+        const canRetry = RETRYABLE_HTTP_CODES.has(status) || text.includes('UNAVAILABLE');
+        console.error('[chat] Cohere upstream error', status, currentModel, text.slice(0, 200));
+
+        if (canRetry && attempt < allModels.length - 1) {
+          console.log('[chat] Cohere retrying', { model: currentModel, reason: 'retryable', status });
+          continue;
+        }
+
+        return res.status(status).json({
+          error: 'Upstream error',
+          status: status,
+          body: text.slice(0, 400)
+        });
+      }
+
+      const data = await upstreamRes.json();
+      const content = extractCohereResponse(data);
+
+      if (!content) {
+        console.error('[chat] Cohere no content', currentModel, data);
+        return res.status(500).json({
+          error: 'No content in Cohere response',
+          body: JSON.stringify(data).slice(0, 400)
+        });
+      }
+
+      console.log('[chat] Cohere ok', {
+        model: currentModel,
+        visible_chars: content.length,
+        preview: content.slice(0, 160) || null,
+        attempt: attempt + 1
+      });
+
+      const normalized = {
+        choices: [{ message: { content } }]
+      };
+      return res.json(normalized);
+    } catch (err) {
+      clearTimeout(timer);
+      const errMsg = String(err || '');
+      const isAbort = errMsg.includes('AbortError') || errMsg.includes('The operation was aborted');
+      console.error('[chat] Cohere error', currentModel, errMsg.slice(0, 200));
+
+      if (attempt < allModels.length - 1) {
+        console.log('[chat] Cohere retrying', { model: currentModel, reason: isAbort ? 'timeout' : 'error' });
+        continue;
+      }
+
+      lastError = { message: errMsg, model: currentModel };
+      break;
+    }
+  }
+
+  if (lastError && ENABLE_PROVIDER_FALLBACK && GOOGLE_API_KEY) {
+    console.log('[chat] Cohere failed, falling back to Google');
+    return await handleGoogleChat(req, res, messages, wantsStream);
+  }
+
+  return res.status(500).json({
+    error: 'All Cohere models failed',
+    message: lastError?.message?.slice(0, 200) || 'Unknown error',
+    tried: allModels
+  });
+}
+
+async function handleCohereStream(req, res, messages, body, apiKey, controller) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  try {
+    const upstreamRes = await fetch('https://api.cohere.com/v2/chat', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ ...body, stream: true }),
+      signal: controller.signal
+    });
+
+    const reader = upstreamRes.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(decoder.decode(value, { stream: true }));
+    }
+  } finally {
+    res.end();
+  }
+  console.log('[chat] Cohere stream complete');
+}
+
+// ---- Google handler with fallback support ----
 async function handleGoogleChat(req, res, messages, wantsStream) {
   if (!GOOGLE_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing GOOGLE_API_KEY' });
   }
 
-  const GOOGLE_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/' + GOOGLE_MODEL + ':generateContent';
+  const allModels = [GOOGLE_MODEL, ...GOOGLE_MODEL_FALLBACKS, ...GOOGLE_MODEL_LAST_RESORTS];
+  let lastError = null;
 
-  console.log('[chat] Google provider', {
-    model: GOOGLE_MODEL,
-    messages: messages.length,
-    max_output_tokens: GOOGLE_MAX_TOKENS,
-    structured: true,
-    stream: wantsStream ?? false
-  });
+  for (let attempt = 0; attempt < allModels.length; attempt++) {
+    const currentModel = allModels[attempt];
+    const isLastResort = attempt >= GOOGLE_MODEL_FALLBACKS.length + 1;
+    const timeout = isLastResort ? GOOGLE_LAST_RESORT_TIMEOUT : GOOGLE_TIMEOUT;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
+    const isStream = wantsStream ?? false;
 
-  try {
-    const upstreamRes = await fetch(GOOGLE_API_URL + '?key=' + GOOGLE_API_KEY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(buildGoogleBody(messages, wantsStream)),
-      signal: controller.signal
+    console.log('[chat] Google provider', {
+      model: currentModel,
+      attempt: attempt + 1,
+      total: allModels.length,
+      fallback: attempt > 0,
+      lastResort: isLastResort,
+      messages: messages.length,
+      max_output_tokens: GOOGLE_MAX_TOKENS,
+      structured: true,
+      stream: isStream
     });
 
-    clearTimeout(timer);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
 
-    if (!upstreamRes.ok) {
-      const text = await upstreamRes.text().catch(() => '');
-      console.error('[chat] Google upstream error', upstreamRes.status, text.slice(0, 400));
-      return res.status(upstreamRes.status).json({
-        error: 'Upstream error',
-        status: upstreamRes.status,
-        body: text
+    try {
+      const GOOGLE_API_URL =
+        'https://generativelanguage.googleapis.com/v1beta/models/' + currentModel + ':generateContent';
+
+      const upstreamRes = await fetch(GOOGLE_API_URL + '?key=' + GOOGLE_API_KEY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildGoogleBody(messages, isStream)),
+        signal: controller.signal
       });
-    }
 
-    const data = await upstreamRes.json();
-    const content = extractGoogleResponse(data);
+      clearTimeout(timer);
 
-    if (!content) {
-      console.error('[chat] Google no content', data);
-      return res.status(500).json({
-        error: 'No content in Google response',
-        body: JSON.stringify(data).slice(0, 400)
+      if (!upstreamRes.ok) {
+        const status = upstreamRes.status;
+        const text = await upstreamRes.text().catch(() => '');
+
+        const canRetry = RETRYABLE_HTTP_CODES.has(status) || text.includes('UNAVAILABLE');
+        console.error('[chat] Google upstream error', status, currentModel, text.slice(0, 200));
+
+        if (canRetry && attempt < allModels.length - 1) {
+          console.log('[chat] Google retrying', { model: currentModel, reason: 'retryable', status });
+          continue;
+        }
+
+        return res.status(status).json({
+          error: 'Upstream error',
+          status: status,
+          body: text.slice(0, 400)
+        });
+      }
+
+      const data = await upstreamRes.json();
+      const content = extractGoogleResponse(data);
+
+      if (!content) {
+        console.error('[chat] Google no content', currentModel, data);
+        return res.status(500).json({
+          error: 'No content in Google response',
+          body: JSON.stringify(data).slice(0, 400)
+        });
+      }
+
+      console.log('[chat] Google ok', {
+        model: currentModel,
+        visible_chars: content.length,
+        preview: content.slice(0, 160) || null,
+        attempt: attempt + 1
       });
+
+      const normalized = {
+        choices: [{ message: { content } }]
+      };
+      return res.json(normalized);
+    } catch (err) {
+      clearTimeout(timer);
+      const errMsg = String(err || '');
+      const isAbort = errMsg.includes('AbortError') || errMsg.includes('The operation was aborted');
+      console.error('[chat] Google error', currentModel, errMsg.slice(0, 200));
+
+      if (attempt < allModels.length - 1) {
+        console.log('[chat] Google retrying', { model: currentModel, reason: isAbort ? 'timeout' : 'error' });
+        continue;
+      }
+
+      lastError = { message: errMsg, model: currentModel };
+      break;
     }
-
-    console.log('[chat] Google ok', {
-      visible_chars: content.length,
-      preview: content.slice(0, 160) || null
-    });
-
-    const normalized = {
-      choices: [{ message: { content } }]
-    };
-    return res.json(normalized);
-  } catch (err) {
-    clearTimeout(timer);
-    throw err;
   }
+
+  return res.status(500).json({
+    error: 'All models failed',
+    message: lastError?.message?.slice(0, 200) || 'Unknown error',
+    tried: allModels
+  });
 }
 
 // ---- Debug logging ----
