@@ -201,11 +201,20 @@ function normalizeScenePacket(obj, raw) {
     return { title: 'Untitled', prose: raw || '', paths: [], characters: [], summary: '' };
   }
   const title = typeof obj.title === 'string' && obj.title.trim() ? obj.title.trim() : 'Untitled';
-  // Accept new field names (prose/paths) or old (story/choices) for backward compat
+  // Accept field names: prose/story/scene (and case variants) for backward compat
   const prose = typeof obj.prose === 'string' ? obj.prose
     : typeof obj.story === 'string' ? obj.story
-    : (raw || '');
-  const paths = coercePaths(obj.paths ?? obj.choices);
+    : typeof obj.scene === 'string' ? obj.scene
+    : typeof obj.Scene === 'string' ? obj.Scene
+    : '';
+  // Prevent raw JSON object from rendering as prose
+  const hasValidProse = prose && prose.length > 0 && !prose.trim().startsWith('{');
+  const finalProse = hasValidProse ? prose : '';
+  if (!hasValidProse && raw && raw.startsWith('{')) {
+    console.warn('[parser] parsed JSON missing prose/story/scene');
+  }
+  // Accept paths/choices (and case variants)
+  const paths = coercePaths(obj.paths ?? obj.choices ?? obj.Paths ?? obj.Choices);
   const characters = coerceCharacters(obj.characters);
   const summary = typeof obj.summary === 'string' ? obj.summary : '';
 
@@ -217,7 +226,7 @@ function normalizeScenePacket(obj, raw) {
   const choiceDirector = coerceChoiceDirector(obj.choiceDirector);
   const sceneRecord = coerceSceneRecord(obj.sceneRecord);
 
-  return { title, prose, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta, choiceDirector, sceneRecord };
+  return { title, prose: finalProse, paths, characters, summary, sceneTags, objectivesDelta, locationDelta, companionsDelta, arcDelta, choiceDirector, sceneRecord };
 }
 
 // ----------------- Public: central entry point -----------------

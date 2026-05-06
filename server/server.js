@@ -75,7 +75,8 @@ const ChatSchema = z.object({
     content: z.string().min(1)
   })).min(1),
   model: z.string().optional(),
-  stream: z.boolean().optional()
+  stream: z.boolean().optional(),
+  isPlanner: z.boolean().optional()  // Planner requests need longer timeout/tokens
 });
 
 const DebugLogSchema = z.object({
@@ -108,11 +109,11 @@ function extractTextContent(content) {
 }
 
 // ---- OpenAI builders ----
-function buildOpenAIBody(messages, stream = false) {
+function buildOpenAIBody(messages, stream = false, maxTokens = null) {
   const body = {
     model: MODEL,
     messages,
-    max_completion_tokens: MAX_COMPLETION_TOKENS,
+    max_completion_tokens: maxTokens || MAX_COMPLETION_TOKENS,
     response_format: { type: 'json_object' }
   };
 
@@ -127,7 +128,7 @@ function extractOpenAIResponse(data) {
 }
 
 // ---- Google builders ----
-function buildGoogleBody(messages, stream = false) {
+function buildGoogleBody(messages, stream = false, maxTokens = null) {
   const systemMessages = messages.filter(m => m.role === 'system');
   const nonSystemMessages = messages.filter(m => m.role !== 'system');
 
@@ -141,7 +142,7 @@ function buildGoogleBody(messages, stream = false) {
       contents: [{ role: 'user', parts: [{ text: systemMessages[0].content }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        maxOutputTokens: GOOGLE_MAX_TOKENS,
+        maxOutputTokens: maxTokens || GOOGLE_MAX_TOKENS,
         temperature: 0.7,
         topP: 0.95,
         topK: 40
@@ -237,15 +238,15 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
   }
 
-  const { messages, stream: wantsStream } = parsed.data;
+  const { messages, stream: wantsStream, isPlanner } = parsed.data;
 
   try {
     if (LLM_PROVIDER === 'cohere') {
-      return await handleCohereChat(req, res, messages, wantsStream);
+      return await handleCohereChat(req, res, messages, wantsStream, isPlanner);
     } else if (LLM_PROVIDER === 'google') {
-      return await handleGoogleChat(req, res, messages, wantsStream);
+      return await handleGoogleChat(req, res, messages, wantsStream, isPlanner);
     } else {
-      return await handleOpenAIChat(req, res, messages, wantsStream);
+      return await handleOpenAIChat(req, res, messages, wantsStream, isPlanner);
     }
   } catch (err) {
     const m = String(err || '');
@@ -258,22 +259,34 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Planner-specific config: longer timeout, more output tokens.
+const PLANNER_TIMEOUT = 90000;
+const PLANNER_MAX_TOKENS = 4000;
+
 // ---- OpenAI handler ----
-async function handleOpenAIChat(req, res, messages, wantsStream) {
+async function handleOpenAIChat(req, res, messages, wantsStream, isPlanner) {
   if (!OPENAI_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing OPENAI_API_KEY' });
   }
 
-  console.log('[chat] OpenAI provider', {
-    model: MODEL,
-    messages: messages.length,
-    max_completion_tokens: MAX_COMPLETION_TOKENS,
-    reasoning_effort: REASONING_EFFORT || 'default',
-    stream: wantsStream ?? false
-  });
+  // Planner uses longer timeout/tokens; scenes use defaults.
+  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : 60000;
+  const effectiveMaxTokens = isPlanner ? PLANNER_MAX_TOKENS : MAX_COMPLETION_TOKENS;
+
+  if (isPlanner) {
+    console.log('[chat] OpenAI planner mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
+  } else {
+    console.log('[chat] OpenAI provider', {
+      model: MODEL,
+      messages: messages.length,
+      max_completion_tokens: effectiveMaxTokens,
+      reasoning_effort: REASONING_EFFORT || 'default',
+      stream: wantsStream ?? false
+    });
+  }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
 
   try {
     const upstreamRes = await fetch(UPSTREAM_URL, {
@@ -282,7 +295,7 @@ async function handleOpenAIChat(req, res, messages, wantsStream) {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(buildOpenAIBody(messages, wantsStream)),
+      body: JSON.stringify(buildOpenAIBody(messages, wantsStream, effectiveMaxTokens)),
       signal: controller.signal
     });
 
@@ -336,9 +349,17 @@ async function handleOpenAIChat(req, res, messages, wantsStream) {
 }
 
 // ---- Cohere handler with fallback and provider fallback ----
-async function handleCohereChat(req, res, messages, wantsStream) {
+async function handleCohereChat(req, res, messages, wantsStream, isPlanner) {
   if (!COHERE_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing COHERE_API_KEY' });
+  }
+
+  // Planner uses longer timeout and more tokens.
+  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : COHERE_TIMEOUT;
+  const effectiveMaxTokens = isPlanner ? PLANNER_MAX_TOKENS : COHERE_MAX_TOKENS;
+
+  if (isPlanner) {
+    console.log('[chat] Cohere planner mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
   }
 
   const allModels = [COHERE_MODEL, ...COHERE_MODEL_FALLBACKS, ...COHERE_MODEL_LAST_RESORTS];
@@ -347,18 +368,21 @@ async function handleCohereChat(req, res, messages, wantsStream) {
   for (let attempt = 0; attempt < allModels.length; attempt++) {
     const currentModel = allModels[attempt];
     const isLastResort = attempt >= COHERE_MODEL_FALLBACKS.length + 1;
-    const timeout = isLastResort ? 60000 : COHERE_TIMEOUT;
+    // Use effective timeout: planner gets 90s, scenes get default.
+    const timeout = isPlanner ? effectiveTimeout : (isLastResort ? 60000 : COHERE_TIMEOUT);
 
-    console.log('[chat] Cohere provider', {
-      model: currentModel,
-      attempt: attempt + 1,
-      total: allModels.length,
-      fallback: attempt > 0,
-      lastResort: isLastResort,
-      messages: messages.length,
-      max_tokens: COHERE_MAX_TOKENS,
-      stream: wantsStream ?? false
-    });
+    if (!isPlanner) {
+      console.log('[chat] Cohere provider', {
+        model: currentModel,
+        attempt: attempt + 1,
+        total: allModels.length,
+        fallback: attempt > 0,
+        lastResort: isLastResort,
+        messages: messages.length,
+        max_tokens: effectiveMaxTokens,
+        stream: wantsStream ?? false
+      });
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -374,7 +398,7 @@ async function handleCohereChat(req, res, messages, wantsStream) {
         })),
         response_format: { type: 'json_object' },
         temperature: 0.7,
-        max_tokens: COHERE_MAX_TOKENS
+        max_tokens: effectiveMaxTokens  // Planner gets 4000, scenes get 1600
       };
 
       if (isReasoningModel) {
@@ -498,9 +522,17 @@ async function handleCohereStream(req, res, messages, body, apiKey, controller) 
 }
 
 // ---- Google handler with fallback support ----
-async function handleGoogleChat(req, res, messages, wantsStream) {
+async function handleGoogleChat(req, res, messages, wantsStream, isPlanner) {
   if (!GOOGLE_API_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing GOOGLE_API_KEY' });
+  }
+
+  // Planner uses longer timeout and more tokens.
+  const effectiveTimeout = isPlanner ? PLANNER_TIMEOUT : GOOGLE_TIMEOUT;
+  const effectiveMaxTokens = isPlanner ? PLANNER_MAX_TOKENS : GOOGLE_MAX_TOKENS;
+
+  if (isPlanner) {
+    console.log('[chat] Google planner mode', { timeout: effectiveTimeout, maxTokens: effectiveMaxTokens });
   }
 
   const allModels = [GOOGLE_MODEL, ...GOOGLE_MODEL_FALLBACKS, ...GOOGLE_MODEL_LAST_RESORTS];
@@ -509,21 +541,24 @@ async function handleGoogleChat(req, res, messages, wantsStream) {
   for (let attempt = 0; attempt < allModels.length; attempt++) {
     const currentModel = allModels[attempt];
     const isLastResort = attempt >= GOOGLE_MODEL_FALLBACKS.length + 1;
-    const timeout = isLastResort ? GOOGLE_LAST_RESORT_TIMEOUT : GOOGLE_TIMEOUT;
+    // Use effective timeout: planner gets 90s, scenes get default.
+    const timeout = isPlanner ? effectiveTimeout : (isLastResort ? GOOGLE_LAST_RESORT_TIMEOUT : GOOGLE_TIMEOUT);
 
     const isStream = wantsStream ?? false;
 
-    console.log('[chat] Google provider', {
-      model: currentModel,
-      attempt: attempt + 1,
-      total: allModels.length,
-      fallback: attempt > 0,
+if (!isPlanner) {
+      console.log('[chat] Google provider', {
+        model: currentModel,
+        attempt: attempt + 1,
+        total: allModels.length,
+        fallback: attempt > 0,
       lastResort: isLastResort,
       messages: messages.length,
-      max_output_tokens: GOOGLE_MAX_TOKENS,
+      max_output_tokens: effectiveMaxTokens,
       structured: true,
       stream: isStream
     });
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -535,7 +570,7 @@ async function handleGoogleChat(req, res, messages, wantsStream) {
       const upstreamRes = await fetch(GOOGLE_API_URL + '?key=' + GOOGLE_API_KEY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildGoogleBody(messages, isStream)),
+        body: JSON.stringify(buildGoogleBody(messages, isStream, effectiveMaxTokens)),
         signal: controller.signal
       });
 

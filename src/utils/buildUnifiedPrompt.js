@@ -8,6 +8,54 @@ import {
   deriveTemplateFamily,
 } from './storyBlueprintPlanner';
 
+// Opening scene schema — includes title for story initialization.
+const OPENING_SCENE_SCHEMA_CONTRACT = `OUTPUT JSON SCHEMA FOR OPENING SCENE (required, no exceptions):
+{
+  "title": "short descriptive story title",
+  "prose": "80-120 word opening scene text — MUST BE prose, NOT scene or story",
+  "paths": ["choice 1", "choice 2", "choice 3"],
+  "summary": "one sentence summary",
+  "sceneTags": [],
+  "locationDelta": { "name": "specific place", "addTags": [] },
+  "objectivesDelta": [],
+  "companionsDelta": [],
+  "arcDelta": { "tension": 0, "beat": 0, "chapter": 0 },
+  "sceneRecord": { "event": "", "stateChange": "", "reveals": [] }
+}
+
+STRICT OUTPUT RULES FOR OPENING SCENE:
+- Return ONLY valid JSON. Do not wrap in markdown.
+- Use "prose", never "scene", "story", "Action", or "opening_scene".
+- Use "paths", never "choices" or "Choices".
+- Include a short story title in "title".
+- "paths" must contain 2-3 physical actions the player can take immediately.
+- "prose" must be narration/prose text, not a scene or story description.
+`;
+
+// General/follow-up scene schema — excludes title (only needed for story init).
+const GENERAL_SCENE_SCHEMA_CONTRACT = `OUTPUT JSON SCHEMA FOR FOLLOW-UP SCENE (required, no exceptions):
+{
+  "prose": "80-120 word continuation scene text — MUST BE prose, NOT scene, story, or Action",
+  "paths": ["choice 1", "choice 2", "choice 3"],
+  "summary": "one sentence summary",
+  "sceneTags": [],
+  "locationDelta": {},
+  "objectivesDelta": [],
+  "companionsDelta": [],
+  "arcDelta": {},
+  "sceneRecord": { "event": "", "stateChange": "", "reveals": [] }
+}
+
+STRICT OUTPUT RULES FOR FOLLOW-UP SCENE:
+- Return ONLY valid JSON. Do not wrap in markdown.
+- Use "prose", never "scene", "story", "Action", or "opening_scene".
+- Use "paths", never "choices" or "Choices".
+- Do NOT generate or include a new "title" field.
+- Only include deltas when something actually changes; otherwise use {} or [].
+- "paths" must contain 2-3 physical actions the player can take immediately.
+- "prose" must be narration/prose text, not a scene or story description.
+`;
+
 /**
  * Build the LLM prompt with World/Arc state + compact companions.
  * Returns { system, user } for use as separate OpenAI message roles.
@@ -154,7 +202,9 @@ ${planBlock}
   const playerName = playerIntro?.playerName || '';
 
   const taskBlock = isFirstScene
-    ? `OPENING SCENE — write the very first moment of this story.
+    ? `${OPENING_SCENE_SCHEMA_CONTRACT}
+
+OPENING SCENE — write the very first moment of this story.
 
 Player setup:
 - Genre: ${playerIntro?.selectedGenres?.join(', ') || 'unspecified'}
@@ -176,7 +226,9 @@ CHOICES — present 2–3 options. Each must be a physical action the player can
   Bad: "Inspect something unknown" / "Question the silence" / "Follow the mystery"
 
 LENGTH — 80–120 words maximum. 2–3 paragraphs, ≤ 2 sentences each. Do not name the player character.`
-    : `Continue directly from the previous scene.
+    : `${GENERAL_SCENE_SCHEMA_CONTRACT}
+
+Continue directly from the previous scene.
 
 CONTINUITY:
 - Previous scene: ${(prose[prose.length - 1] || '').slice(0, 400)}
@@ -256,9 +308,17 @@ RULES:
 
 OUTPUT SHAPE (STRICT JSON):
 {
-  "title": "string",
-  "prose": "string",
-  "paths": ["string — 0 to 4 items; count must match choiceDirector.count; empty array [] when type is 'none' or 'freetext'"],
+  "title": "short title",
+  "prose": "MUST BE prose text, NOT scene or story",
+  "paths": ["choice 1", "choice 2", "choice 3"],
+  "summary": "one sentence",
+  "sceneTags": [],
+  "locationDelta": {},
+  "objectivesDelta": [],
+  "companionsDelta": [],
+  "arcDelta": {},
+  "sceneRecord": {}
+}
   "characters": [
     {
       "name": "string",

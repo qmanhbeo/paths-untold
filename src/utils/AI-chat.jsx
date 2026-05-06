@@ -10,10 +10,12 @@ const debug = createDebugLogger('AI-chat');
 /**
  * Non-streaming scene generation.
  * Accepts a prompt string or a messages array (system + user roles).
+ * Options:
+ *   - isPlanner: pass to server for planner-specific timeout/tokens (90s, 4000 tokens)
  */
-export async function generateScene(promptOrMessages, callback) {
+export async function generateScene(promptOrMessages, callback, options = {}) {
   try {
-    const upstream = await llmChat(promptOrMessages, { model: LLM_MODEL });
+    const upstream = await llmChat(promptOrMessages, { model: LLM_MODEL, ...options });
     if (callback) callback(upstream);
     return upstream;
   } catch (e) {

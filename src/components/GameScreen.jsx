@@ -7,6 +7,7 @@ import { planStoryBlueprint } from '../utils/storyBlueprintPlanner';
 import { planChapter } from '../utils/chapterPlanner';
 import { updateFromAIPacket } from '../state/updateFromAIPacket';
 import { extractAndNormalizeAiResponse } from '../utils/storyParser';
+import { NarrativeRuntimeInspector } from './dev/NarrativeRuntimeInspector';
 import {
   buildSceneSegments,
   createEmptyNarrativeGraph,
@@ -87,6 +88,7 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
   const storyBoxRef = useRef(null);
   const sceneGenerated = useRef(false);
   const playerNameRef = useRef(storyOptions?.playerName || '');
+  const plannerRanRef = useRef(false);  // Prevent duplicate background planner calls
 
   const [gameMemory, setGameMemory] = useState(() => {
     if (storyOptions?.resumeFromSave && storyOptions.memory) {
@@ -166,30 +168,15 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
       sceneGenerated.current = true;
 
       (async () => {
-        // Master Planner: one initialization call that generates the full Story Blueprint
-        // (nested wave structure: story → arcs → chapters → scenes).
-        // Falls back to the legacy planChapter() call if the blueprint fails.
-        const storyBlueprint = await planStoryBlueprint(storyOptions, generateScene);
-        let memWithPlan;
-        if (storyBlueprint) {
-          debug.log('[planStoryBlueprint] success: using blueprint');
-          memWithPlan = {
-            ...initialMemory,
-            arc: { ...initialMemory.arc, storyBlueprint }
-          };
-        } else {
-          // Fallback: legacy per-chapter planning
-          debug.log('[planStoryBlueprint] failed: falling back to legacy chapterPlanner');
-          const chapterPlan = await planChapter(storyOptions, initialMemory.arc, generateScene);
-          memWithPlan = chapterPlan
-            ? { ...initialMemory, arc: { ...initialMemory.arc, chapterPlan } }
-            : initialMemory;
-        }
-        setGameMemory(memWithPlan);
-        memoryRef.current = memWithPlan;
-
-        const { system: openingSys, user: openingUser } = buildScenePrompt(memWithPlan, '', { ...storyOptions, playerName });
-        const openingMessages = [{ role: 'system', content: openingSys }, { role: 'user', content: openingUser }];
+        const { system: openingSys, user: openingUser } = buildScenePrompt(
+          initialMemory,
+          '',
+          { ...storyOptions, playerName }
+        );
+        const openingMessages = [
+          { role: 'system', content: openingSys },
+          { role: 'user', content: openingUser },
+        ];
         debug.log('[PROMPT 0]', openingUser);
 
         const rawAI0 = await generateScene(openingMessages);
@@ -197,10 +184,49 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           choice: '',
           parentId: null,
           promptForNode: openingUser,
-          baseMemory: memWithPlan
+          baseMemory: initialMemory,
         });
         setIsLoading(false);
+
+        runBackgroundPlanner(storyOptions);
       })();
+    }
+
+    async function runBackgroundPlanner(options) {
+      // Prevent duplicate planner launches from React StrictMode/rerenders.
+      if (plannerRanRef.current) {
+        debug.log('[planner] duplicate launch prevented');
+        return;
+      }
+      plannerRanRef.current = true;
+
+      const startTime = performance.now();
+      try {
+        debug.log('[planner] background blueprint started');
+        const blueprint = await planStoryBlueprint(options, generateScene);
+
+        if (blueprint) {
+          const currentMem = memoryRef.current;
+          if (currentMem) {
+            const updated = {
+              ...currentMem,
+              arc: { ...currentMem.arc, storyBlueprint: blueprint },
+            };
+            setGameMemory(updated);
+            memoryRef.current = updated;
+            const duration = ((performance.now() - startTime) / 1000).toFixed(1);
+            debug.log('[planner] background blueprint attached in', duration + 's');
+          }
+        }
+      } catch (e) {
+        const isAbort = e.name === 'AbortError' || String(e).includes('AbortError');
+        const duration = ((performance.now() - startTime) / 1000).toFixed(1);
+        if (isAbort) {
+          debug.error('[planner] aborted after', duration + 's', e);
+        } else {
+          debug.error('[planner] failed after', duration + 's', e);
+        }
+      }
     }
   }, [prompt]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -611,6 +637,12 @@ const GameScreen = ({ prompt, storyOptions, onBackToMenu }) => {
           }}
         />
       )}
+
+      <NarrativeRuntimeInspector
+        memory={gameMemory}
+        sceneIndex={gameMemory.sceneIndex}
+        storyOptions={storyOptions}
+      />
     </div>
   );
 };

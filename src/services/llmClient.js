@@ -1,7 +1,11 @@
 // src/services/llmClient.js
 import { API_BASE, LLM_MODEL } from '../config/env';
 
-function withTimeout(ms = 30000) {
+// Planner requests need longer timeout and more tokens than scene generation.
+const PLANNER_TIMEOUT = 90000;
+const SCENE_TIMEOUT = 30000;
+
+function withTimeout(ms = SCENE_TIMEOUT) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), ms);
   return { signal: ctrl.signal, clear: () => clearTimeout(id) };
@@ -10,19 +14,25 @@ function withTimeout(ms = 30000) {
 /**
  * Low-level chat call to the proxy; returns the upstream JSON as-is.
  * Accepts either a prompt string (wrapped as user message) or a messages array.
+ * Options:
+ *   - model: override model name
+ *   - isPlanner: true for Story Blueprint planner (uses longer timeout)
  */
 export async function chat(messagesOrPrompt, options = {}) {
   const model = options.model || LLM_MODEL;
+  const isPlanner = options.isPlanner === true;
+  // Planner needs longer timeout; scenes use default 30s.
+  const timeout = isPlanner ? PLANNER_TIMEOUT : SCENE_TIMEOUT;
   const messages = Array.isArray(messagesOrPrompt)
     ? messagesOrPrompt
     : [{ role: 'user', content: messagesOrPrompt }];
-  const { signal, clear } = withTimeout(30000);
+  const { signal, clear } = withTimeout(timeout);
   try {
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify({ model, messages, isPlanner }),
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');

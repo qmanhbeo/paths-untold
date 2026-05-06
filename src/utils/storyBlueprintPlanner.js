@@ -178,17 +178,37 @@ function extractContent(raw) {
  * @returns {Promise<import('../state/types').StoryBlueprint|null>}
  */
 export async function planStoryBlueprint(playerIntro, generateFn) {
+  const startTime = performance.now();
   try {
     const user = buildBlueprintPrompt(playerIntro);
+    const promptChars = user.length + BLUEPRINT_SYSTEM.length;
+    const estTokens = Math.ceil(promptChars / 4);
+
+    console.log('[planner] prompt chars:', promptChars, 'est tokens:', estTokens);
+
     const raw = await generateFn([
       { role: 'system', content: BLUEPRINT_SYSTEM },
       { role: 'user', content: user },
-    ]);
+    ], null, { isPlanner: true });  // Planner uses 90s timeout, 4000 tokens
+
+    const duration = ((performance.now() - startTime) / 1000).toFixed(1);
+    console.log('[planner] duration:', duration + 's');
+
     const content = extractContent(raw);
     if (!content) return null;
     const text = typeof content === 'string' ? content : JSON.stringify(content);
+    const outputChars = text.length;
+    console.log('[planner] output chars:', outputChars);
+
     const parsed = JSON.parse(text.trim());
     const blueprint = normalizeBlueprint(parsed);
+
+    // Dev-only: inspect raw and normalized blueprint output.
+    if (import.meta.env.DEV) {
+      console.log('[planner] raw blueprint JSON:', text);
+      console.log('[planner] normalized blueprint:', JSON.stringify(blueprint, null, 2));
+    }
+
     if (blueprint) {
       console.log(
         `[planStoryBlueprint] success — ${blueprint.arcs.length} arcs, ` +
