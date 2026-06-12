@@ -1,5 +1,13 @@
 # 🌌 Paths Untold
 
+> **Status:** Frozen standalone version.
+>
+> This repository is kept as a historical standalone version of **Paths Untold**. Active development has moved into my personal website repository:
+>
+> https://github.com/qmanhbeo/qmanhbeo-site
+>
+> The integrated version lives on the site at `/paths-untold`.
+
 **An Experimental Long-Horizon Narrative Orchestration System**
 
 Paths Untold is not designed to generate stories, but to sustain them.
